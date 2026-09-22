@@ -13,12 +13,30 @@ import {
   FileText,
   X,
   CheckCircle2,
+  XCircle,
   AlertCircle
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import Drawer from '../components/common/Drawer';
 import { MATERIALS_DATA, CPSE_LIST } from '../data/mockData';
-import { getMaterials } from '../services/api';
+import { getMaterials, matchMaterial, submitApproval } from '../services/api';
+
+const MATCH_STATUS_VARIANTS = {
+  Confirmed: 'success',
+  'Under Review': 'warning',
+  'Duplicate Cluster': 'danger',
+  Unmapped: 'neutral'
+};
+
+const classifyRecommendation = (score, bestMatch) => {
+  if (!bestMatch || !score || score < 50) {
+    return { label: 'Different Material', variant: 'danger' };
+  }
+  if (score >= 75) {
+    return { label: 'Potential Equivalent Material', variant: 'success' };
+  }
+  return { label: 'Possible Near Duplicate', variant: 'warning' };
+};
 
 export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonItems, setComparisonItems, setActiveTab, showToast }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -31,6 +49,18 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
   const [isLoading, setIsLoading] = useState(false);
   const [selectedItemDetail, setSelectedItemDetail] = useState(null);
   const [materials, setMaterials] = useState(MATERIALS_DATA);
+
+  // AI Material Match state
+  const [matchingMaterial, setMatchingMaterial] = useState(null);
+  const [isMatchOpen, setIsMatchOpen] = useState(false);
+  const [isMatchLoading, setIsMatchLoading] = useState(false);
+  const [matchResult, setMatchResult] = useState(null);
+  const [matchError, setMatchError] = useState(null);
+
+  // Human Review & Approval state
+  const [reviewComment, setReviewComment] = useState('');
+  const [isReviewSubmitting, setIsReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState(null);
 
   // Fetch materials from API whenever filters change
   useEffect(() => {
@@ -46,6 +76,7 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
               specs = { Description: m.description };
             }
             return {
+              id: m.id,
               numcCode: 'NUMC-401015-0089',
               localCode: m.material_code,
               cpseId: m.cpse_id,
@@ -95,6 +126,60 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
       setIsLoading(false);
       showToast('AI Semantic Material Search Updated', 'info');
     }, 300);
+  };
+
+  const handleMatchMaterial = (mat) => {
+    if (!mat.id) {
+      showToast('AI Match is available for live catalog items only (sample data has no backend record)', 'warning');
+      return;
+    }
+    setMatchingMaterial(mat);
+    setMatchResult(null);
+    setMatchError(null);
+    setIsMatchLoading(true);
+    setIsMatchOpen(true);
+    matchMaterial(mat.id)
+      .then((data) => setMatchResult(data))
+      .catch((err) => setMatchError(err.message || 'AI material matching failed'))
+      .finally(() => setIsMatchLoading(false));
+  };
+
+  const handleRetryMatch = () => {
+    if (!matchingMaterial?.id) return;
+    setMatchResult(null);
+    setMatchError(null);
+    setIsMatchLoading(true);
+    matchMaterial(matchingMaterial.id)
+      .then((data) => setMatchResult(data))
+      .catch((err) => setMatchError(err.message || 'AI material matching failed'))
+      .finally(() => setIsMatchLoading(false));
+  };
+
+  const handleReviewAction = (materialId, mappingId, decision) => {
+    if (!matchingMaterial?.id || !mappingId || isReviewSubmitting) return;
+    setIsReviewSubmitting(true);
+    setReviewError(null);
+    submitApproval(
+      mappingId,
+      decision,
+      reviewComment.trim() || (decision === 'Approved' ? 'Approved via Material Matching review' : 'Rejected via Material Matching review'),
+      'Master Data Admin'
+    )
+      .then(() => {
+        const newStatus = decision === 'Approved' ? 'Confirmed' : 'Under Review';
+        setMatchResult((prev) => (prev ? { ...prev, match_status: newStatus } : prev));
+        setReviewComment('');
+        if (decision === 'Approved') {
+          showToast(`Approved match for ${matchingMaterial.localCode}. Mapping confirmed & audit logged.`, 'success');
+        } else {
+          showToast(`Rejected match for ${matchingMaterial.localCode}. Feedback recorded & audit logged.`, 'warning');
+        }
+      })
+      .catch((err) => {
+        setReviewError(err.message || 'Review action failed');
+        showToast(err.message || 'Review action failed', 'danger');
+      })
+      .finally(() => setIsReviewSubmitting(false));
   };
 
   const toggleAddToComparison = (item) => {
@@ -370,6 +455,13 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
                           <Eye size={13} />
                         </button>
                         <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleMatchMaterial(mat)}
+                          title="Run AI matching against National standard catalog"
+                        >
+                          <Sparkles size={13} />
+                        </button>
+                        <button
                           className={`btn btn-sm ${checked ? 'btn-primary' : 'btn-secondary'}`}
                           onClick={() => toggleAddToComparison(mat)}
                           title={checked ? 'Selected for comparison' : 'Add to compare'}
@@ -413,6 +505,9 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
                 <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
                   <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => setSelectedItemDetail(mat)}>
                     <Eye size={13} /> Details Sheet
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleMatchMaterial(mat)} title="Run AI matching">
+                    <Sparkles size={13} />
                   </button>
                   <button className={`btn btn-sm ${checked ? 'btn-primary' : 'btn-secondary'}`} onClick={() => toggleAddToComparison(mat)}>
                     <GitCompare size={13} /> {checked ? 'Selected' : 'Compare'}
@@ -514,6 +609,235 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
             </div>
           </div>
         )}
+      </Drawer>
+
+      {/* AI Material Match Results Drawer */}
+      <Drawer
+        isOpen={isMatchOpen}
+        onClose={() => setIsMatchOpen(false)}
+        title={`AI Match Result: ${matchingMaterial?.localCode || ''}`}
+        footer={
+          <button className="btn btn-secondary" onClick={() => setIsMatchOpen(false)}>
+            Close
+          </button>
+        }
+      >
+        {isMatchLoading ? (
+          <div className="card empty-state">
+            <div className="loading-spinner" style={{ margin: '0 auto 16px' }} />
+            <div style={{ fontWeight: 600, color: '#0F172A' }}>Running AI Semantic Match...</div>
+            <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+              Comparing specs against National Material Master catalog
+            </div>
+          </div>
+        ) : matchError ? (
+          <div className="card empty-state">
+            <AlertCircle className="empty-state-icon" />
+            <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>Match Failed</div>
+            <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
+              {matchError}. Ensure the backend AI service is running at http://localhost:8000.
+            </div>
+            <button className="btn btn-secondary btn-sm" style={{ marginTop: '14px' }} onClick={handleRetryMatch}>
+              <RefreshCw size={13} /> Retry
+            </button>
+          </div>
+        ) : matchResult ? (
+          (() => {
+            const recommendation = classifyRecommendation(
+              matchResult.best_match?.similarity_score,
+              matchResult.best_match
+            );
+            const recNotes = {
+              'Potential Equivalent Material': 'This material strongly matches the National standard below and is recommended for harmonization review.',
+              'Possible Near Duplicate': 'Close technical overlap detected. Verify specifications before considering unification with the National standard.',
+              'Different Material': 'No sufficiently similar National standard found. This item likely requires a new national classification.'
+            };
+            const best = matchResult.best_match;
+            const matches = matchResult.all_matches || [];
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Original Material */}
+                <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Original Material</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '13px' }}>{matchingMaterial.cpseName}</div>
+                      <div className="code-tag" style={{ marginTop: '4px', display: 'inline-block' }}>
+                        {matchingMaterial.localCode} · CPSE {matchingMaterial.cpseId.toUpperCase()}
+                      </div>
+                    </div>
+                    <Badge variant={MATCH_STATUS_VARIANTS[matchResult.match_status] || 'neutral'}>
+                      {matchResult.match_status || 'Unmapped'}
+                    </Badge>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748B', fontStyle: 'italic', marginTop: '8px' }}>
+                    Raw: "{matchingMaterial.rawDescription}"
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#0F172A', fontWeight: 500, marginTop: '4px' }}>
+                    {matchingMaterial.standardDescription}
+                  </div>
+                </div>
+
+                {/* Recommendation Banner */}
+                <div style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${recommendation.variant === 'success' ? '#BBF7D0' : recommendation.variant === 'warning' ? '#FDE68A' : '#FECACA'}`, backgroundColor: recommendation.variant === 'success' ? '#F0FDF4' : recommendation.variant === 'warning' ? '#FFFBEB' : '#FFF7F7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <Badge variant={recommendation.variant}>
+                      <Sparkles size={11} /> {recommendation.label}
+                    </Badge>
+                    {best && (
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
+                        Best match: {best.national_code}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#334155', marginTop: '8px' }}>{recNotes[recommendation.label]}</div>
+                </div>
+
+                {/* Best Match Similarity */}
+                {best ? (
+                  <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#1D4ED8' }}>AI Similarity Score</span>
+                      <span style={{ fontSize: '16px', fontWeight: 700, color: '#1D4ED8' }}>
+                        {best.similarity_score.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div style={{ height: '8px', backgroundColor: '#DBEAFE', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, Math.max(0, best.similarity_score))}%`,
+                          height: '100%',
+                          backgroundColor: best.similarity_score >= 75 ? '#16A34A' : best.similarity_score >= 50 ? '#D97706' : '#DC2626',
+                          borderRadius: '4px'
+                        }}
+                      />
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748B', marginTop: '6px' }}>
+                      Against {best.standard_description}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card empty-state" style={{ padding: '20px' }}>
+                    <AlertCircle size={22} className="empty-state-icon" />
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: '#0F172A' }}>No Matching Standards Found</div>
+                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                      The AI found no National standard above the minimum similarity threshold.
+                    </div>
+                  </div>
+                )}
+
+                {/* Top Matching Materials */}
+                <div>
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', marginBottom: '10px' }}>
+                    Top Matching Materials ({matches.length})
+                  </h4>
+                  {matches.length > 0 ? (
+                    <div className="table-container">
+                      <table className="enterprise-table">
+                        <thead>
+                          <tr>
+                            <th>National Code</th>
+                            <th>Standardized Description</th>
+                            <th>Category</th>
+                            <th>Unit</th>
+                            <th>Match Type</th>
+                            <th>Similarity</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {matches.map((match, idx) => (
+                            <tr key={idx}>
+                              <td>
+                                <div style={{ fontWeight: 700, color: '#1D4ED8', fontSize: '12px' }}>{match.national_code}</div>
+                              </td>
+                              <td style={{ fontSize: '11px', maxWidth: '220px' }}>{match.standard_description}</td>
+                              <td><Badge variant="neutral">{match.category}</Badge></td>
+                              <td style={{ fontSize: '12px', fontWeight: 600 }}>{match.unit || 'NOS'}</td>
+                              <td>
+                                <Badge variant={match.is_category_match ? 'success' : 'warning'}>
+                                  {match.is_category_match ? 'Same Category' : 'Cross-Category'}
+                                </Badge>
+                              </td>
+                              <td>
+                                <Badge variant={match.similarity_score >= 75 ? 'success' : match.similarity_score >= 50 ? 'warning' : 'danger'}>
+                                  {match.similarity_score.toFixed(1)}%
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="card empty-state" style={{ padding: '16px' }}>
+                      <div style={{ fontSize: '12px', color: '#64748B' }}>
+                        No candidate matches returned by the AI matcher.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Human Review & Approval */}
+                <div style={{ padding: '14px', borderRadius: '8px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                      Human Review & Approval
+                    </div>
+                    <Badge variant={MATCH_STATUS_VARIANTS[matchResult.match_status] || 'neutral'}>
+                      {matchResult.match_status || 'Unmapped'}
+                    </Badge>
+                  </div>
+
+                  {matchResult.mapping_id ? (
+                    <>
+                      <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px', display: 'block' }}>
+                        Review Comment (optional)
+                      </label>
+                      <textarea
+                        className="form-control"
+                        rows={2}
+                        placeholder="Add custodian notes for this AI recommendation..."
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        disabled={isReviewSubmitting}
+                      />
+
+                      {reviewError && (
+                        <div style={{ fontSize: '12px', color: '#B91C1C', marginTop: '8px' }}>
+                          {reviewError}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleReviewAction(matchingMaterial.id, matchResult.mapping_id, 'Rejected')}
+                          disabled={isReviewSubmitting}
+                        >
+                          <XCircle size={13} /> {isReviewSubmitting ? 'Submitting...' : 'Reject Match'}
+                        </button>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => handleReviewAction(matchingMaterial.id, matchResult.mapping_id, 'Approved')}
+                          disabled={isReviewSubmitting}
+                        >
+                          <CheckCircle2 size={13} /> {isReviewSubmitting ? 'Submitting...' : 'Approve Match'}
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>
+                        Original material &amp; CPSE code are preserved. Approval confirms the mapping and is recorded in the audit log.
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '12px', color: '#64748B' }}>
+                      No mapping is pending review for this material yet — run matching again to generate one.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()
+        ) : null}
       </Drawer>
     </div>
   );

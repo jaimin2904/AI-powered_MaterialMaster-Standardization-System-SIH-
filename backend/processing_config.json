@@ -1,0 +1,65 @@
+{
+  "abbreviations": {
+    "ss": "stainless steel",
+    "s.s.": "stainless steel",
+    "ms": "mild steel",
+    "m.s.": "mild steel",
+    "cs": "carbon steel",
+    "c.s.": "carbon steel",
+    "wcb": "cast carbon steel wcb",
+    "pcs": "pieces",
+    "nos": "numbers",
+    "no.": "number",
+    "blr": "boiler",
+    "vlv": "valve",
+    "mtr": "motor",
+    "brg": "bearing",
+    "flg": "flanged",
+    "hd": "head",
+    "hex": "hexagonal",
+    "ht": "high tensile",
+    "galv": "galvanized",
+    "ind": "induction",
+    "cl": "class",
+    "sqmm": "sq mm",
+    "off": "offshore"
+  },
+  "units": {
+    "pcs": "pieces",
+    "pc": "pieces",
+    "nos": "numbers",
+    "no": "numbers",
+    "number": "numbers",
+    "numbers": "numbers",
+    "mm": "mm",
+    "kg": "kg",
+    "kgs": "kg",
+    "mtr": "meter",
+    "mtrs": "meter",
+    "m": "meter",
+    "in": "inch",
+    "inch": "inch",
+    "sqmm": "sq mm",
+    "kw": "kW",
+    "hp": "HP"
+  },
+  "extraction_rules": {
+    "size_patterns": [
+      "(\\d+\\s*(?:inch|in|\"|NB|mm|sq\\s*mm))",
+      "(\\d+\\s*x\\s*\\d+(?:\\s*x\\s*\\d+)?\\s*(?:mm|inch|in|\")?)"
+    ],
+    "material_type_patterns": [
+      "(stainless\\s*steel(?:\\s*316|\\s*304)?|SS316|SS304|mild\\s*steel|carbon\\s*steel|WCB|HDPE|XLPE|ALUMINIUM|AL)"
+    ],
+    "pressure_class_patterns": [
+      "(class\\s*\\d+|CL-\\d+|\\d+#|PN\\d+|\\d+\\s*bar)",
+      "(\\d+\\.\\d+\\s*kV|\\d+\\s*kV)"
+    ],
+    "power_capacity_patterns": [
+      "(\\d+\\s*kW|\\d+\\s*HP|\\d+\\s*RPM)"
+    ],
+    "model_number_patterns": [
+      "(6\\d{3}(?:-[2ZRS1C3]+)?|API\\s*\\d+|IS\\s*\\d+)"
+    ]
+  }
+}

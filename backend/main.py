@@ -5,13 +5,26 @@ from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text as sa_text
 
-from .database import engine, get_db, Base
+from .database import engine, get_db, Base, SessionLocal
 from . import models, schemas, crud
 from .seed import seed_database
 
-# Initialize database schema and seed data
+
+def _ensure_embedding_columns():
+    """Lightweight migration: add the embedding column to existing tables."""
+    with engine.begin() as conn:
+        for table in ("materials", "standard_materials"):
+            rows = conn.execute(sa_text(f"PRAGMA table_info({table})")).fetchall()
+            cols = {r[1] for r in rows}
+            if "embedding" not in cols:
+                conn.execute(sa_text(f"ALTER TABLE {table} ADD COLUMN embedding TEXT"))
+
+
+# Initialize database schema, migrate, and seed data
 Base.metadata.create_all(bind=engine)
+_ensure_embedding_columns()
 seed_database()
 
 app = FastAPI(
@@ -112,6 +125,20 @@ def search_materials(
         res.append(m_dict)
     return res
 
+@app.get("/api/materials/duplicates", response_model=schemas.DuplicateDetectionResponse)
+def get_duplicate_clusters(
+    threshold: float = Query(80.0, description="Minimum similarity threshold (0-100) for a duplicate"),
+    limit: int = Query(500, description="Maximum number of materials to scan"),
+    db: Session = Depends(get_db)
+):
+    _ensure_index(db)
+    clusters = _duplicate_clusters(db, threshold=threshold, limit=limit)
+    return schemas.DuplicateDetectionResponse(
+        clusters_found=len(clusters),
+        total_duplicates=sum(c["material_count"] for c in clusters),
+        clusters=[schemas.DuplicateCluster(**c) for c in clusters],
+    )
+
 @app.get("/api/materials/{material_id}", response_model=schemas.MaterialOut)
 def get_material(material_id: int, db: Session = Depends(get_db)):
     m = crud.get_material(db, material_id)
@@ -148,9 +175,365 @@ def delete_material(material_id: int, db: Session = Depends(get_db)):
     return {"detail": f"Material ID {material_id} deleted successfully"}
 
 
+from .processor import processor
+from .matcher import matcher as semantic_matcher
+
+
 # ==========================================
-# 3. CSV / EXCEL MATERIAL UPLOAD API
+# AI/ML SEMANTIC MATCHER INDEX MANAGEMENT
 # ==========================================
+def rebuild_matcher_index(db: Session) -> int:
+    """(Re)build the embedding index from the current standard_materials table."""
+    stds = db.query(models.StandardMaterial).all()
+
+    cache = {}
+    for std in stds:
+        if std.embedding:
+            try:
+                cache[std.id] = json.loads(std.embedding)
+            except (ValueError, TypeError):
+                cache[std.id] = None
+
+    index_data = [
+        {
+            "id": std.id,
+            "national_code": std.national_code,
+            "standard_description": std.standard_description,
+            "specification": std.specification,
+            "unit": std.unit,
+            "category": std.category,
+            "embedding": cache.get(std.id),
+        }
+        for std in stds
+    ]
+
+    fresh_cache = semantic_matcher.build_index(index_data, embedding_cache=cache)
+
+    # Persist embeddings that are new or correspond to a changed description,
+    # so they can be reused instead of being regenerated.
+    for std in stds:
+        entry = fresh_cache.get(std.id)
+        if entry and cache.get(std.id) != entry:
+            std.embedding = json.dumps(entry)
+    db.commit()
+
+    return len(index_data)
+
+
+def _sync_material_embeddings(db: Session, materials, cache: dict):
+    """Persist freshly computed material embeddings keyed by material id."""
+    if not cache:
+        return
+    changed = False
+    for mat in materials:
+        entry = cache.get(mat.id)
+        if not entry:
+            continue
+        current = None
+        if mat.embedding:
+            try:
+                current = json.loads(mat.embedding)
+            except (ValueError, TypeError):
+                current = None
+        if current != entry:
+            mat.embedding = json.dumps(entry)
+            changed = True
+    if changed:
+        db.commit()
+
+
+# Pre-warm the matcher index at startup using the seeded standard materials
+_startup_db = SessionLocal()
+try:
+    rebuild_matcher_index(_startup_db)
+finally:
+    _startup_db.close()
+
+
+def _material_match_dict(mat) -> dict:
+    embedding = None
+    if mat.embedding:
+        try:
+            embedding = json.loads(mat.embedding)
+        except (ValueError, TypeError):
+            embedding = None
+    mapping_status = "Unmapped"
+    if mat.mappings:
+        mapping_status = next(
+            (m.status for m in mat.mappings if m.status),
+            "Unmapped",
+        )
+    return {
+        "id": mat.id,
+        "material_code": mat.material_code,
+        "description": mat.description,
+        "cleaned_description": mat.cleaned_description,
+        "raw_description": mat.raw_description,
+        "status": mapping_status,
+        "category": mat.category,
+        "unit": mat.unit,
+        "extracted_specs": mat.extracted_specs,
+        "cpse_id": mat.cpse_id,
+        "cpse_name": mat.cpse.name if mat.cpse else mat.cpse_id,
+        "unit_cost": mat.unit_cost,
+        "stock_qty": mat.stock_qty,
+        "plant_location": mat.plant_location,
+        "embedding": embedding,
+    }
+
+
+def _ensure_index(db: Session):
+    if not semantic_matcher._is_fitted:
+        rebuild_matcher_index(db)
+
+
+def _duplicate_clusters(db: Session, threshold: float = 80.0, limit: int = 500):
+    mats = db.query(models.Material).limit(limit).all()
+    material_dicts = [_material_match_dict(m) for m in mats]
+
+    cache = {
+        m.id: m_dict["embedding"]
+        for m, m_dict in zip(mats, material_dicts)
+        if m_dict["embedding"]
+    }
+
+    clusters = semantic_matcher.find_duplicates(
+        material_dicts,
+        threshold=threshold,
+        embedding_cache=cache,
+    )
+
+    # Persist/freshen material embeddings for later reuse
+    _sync_material_embeddings(db, mats, semantic_matcher._last_duplicate_cache)
+    return clusters
+
+
+# ==========================================
+# MATERIAL DATA PROCESSING MODULE ENDPOINTS
+# ==========================================
+@app.post("/api/materials/process", response_model=schemas.ProcessMaterialResponse)
+def process_material_description(req: schemas.ProcessMaterialRequest):
+    """
+    Normalizes text, expands abbreviations, normalizes units, and extracts specifications.
+    Preserves raw description.
+    """
+    res = processor.process_material(req.raw_description, unit=req.unit or "NOS")
+    return res
+
+@app.post("/api/materials/{material_id}/process", response_model=schemas.MaterialOut)
+def process_existing_material(material_id: int, db: Session = Depends(get_db)):
+    """
+    Process an existing material record in the database and update its cleaned/normalized fields.
+    """
+    mat = crud.get_material(db, material_id)
+    if not mat:
+        raise HTTPException(status_code=404, detail="Material item not found")
+
+    res = processor.process_material(mat.raw_description or mat.description, unit=mat.unit)
+    mat.cleaned_description = res["cleaned_description"]
+    mat.normalized_unit = res["normalized_unit"]
+    mat.extracted_specs = json.dumps(res["extracted_specs"])
+
+    db.commit()
+    db.refresh(mat)
+
+    crud.create_audit_log(
+        db,
+        action="PROCESS_MATERIAL",
+        old_val=mat.raw_description,
+        new_val=json.dumps(res),
+        user="Material Data Processing Service"
+    )
+
+    m_dict = schemas.MaterialOut.from_orm(mat)
+    m_dict.cpse_name = mat.cpse.name if mat.cpse else mat.cpse_id
+    return m_dict
+
+# ==========================================
+# AI/ML SEMANTIC MATCHING ENGINE ENDPOINTS
+# ==========================================
+@app.post("/api/materials/match", response_model=schemas.MatchSingleResponse)
+def match_material_description(req: schemas.MatchSingleRequest, db: Session = Depends(get_db)):
+    """Normalize a raw description and find the best standard-material matches."""
+    _ensure_index(db)
+    res = processor.process_material(req.raw_description, unit=req.unit or "NOS")
+    matches = semantic_matcher.find_matches(
+        description=res["cleaned_description"],
+        raw_description=req.raw_description,
+        category=req.category or "",
+        unit=req.unit or "NOS",
+        specs=res["extracted_specs"],
+        top_n=req.top_n,
+        min_score=req.min_score,
+    )
+    return schemas.MatchSingleResponse(
+        raw_description=req.raw_description,
+        cleaned_description=res["cleaned_description"],
+        matches=[schemas.MatchResult(**m) for m in matches],
+    )
+
+@app.post("/api/materials/{material_id}/match", response_model=schemas.MatchMaterialResponse)
+def match_existing_material(material_id: int, db: Session = Depends(get_db)):
+    """Match a stored material against standard materials and update its mapping."""
+    mat = crud.get_material(db, material_id)
+    if not mat:
+        raise HTTPException(status_code=404, detail="Material item not found")
+
+    _ensure_index(db)
+    res = processor.process_material(mat.raw_description or mat.description, unit=mat.unit)
+    matches = semantic_matcher.find_matches(
+        description=res["cleaned_description"],
+        raw_description=mat.raw_description,
+        category=mat.category,
+        unit=mat.unit,
+        specs=res["extracted_specs"],
+    )
+    best_match = matches[0] if matches else None
+
+    mapping_updated = False
+    if best_match:
+        crud.create_or_update_mapping(
+            db,
+            schemas.MaterialMappingCreate(
+                material_id=material_id,
+                standard_material_id=best_match["standard_material_id"],
+                similarity_score=best_match["similarity_score"],
+                status="Under Review",
+            ),
+            user="AI Semantic Matcher",
+        )
+        mapping_updated = True
+
+    # Cache the freshly-embedded material description for later reuse
+    if semantic_matcher._last_query_cache:
+        mat.embedding = json.dumps(semantic_matcher._last_query_cache)
+        db.commit()
+
+    mapping_status = "Unmapped"
+    mapping_row = db.query(models.MaterialMapping).filter(
+        models.MaterialMapping.material_id == material_id
+    ).first()
+    if mapping_row:
+        mapping_status = mapping_row.status
+
+    return schemas.MatchMaterialResponse(
+        material_id=mat.id,
+        material_code=mat.material_code,
+        description=mat.description,
+        cpse_id=mat.cpse_id,
+        cpse_name=mat.cpse.name if mat.cpse else mat.cpse_id,
+        match_status=mapping_status,
+        mapping_id=mapping_row.id if mapping_row else None,
+        best_match=schemas.MatchResult(**best_match) if best_match else None,
+        all_matches=[schemas.MatchResult(**m) for m in matches],
+        mapping_updated=mapping_updated,
+    )
+
+@app.post("/api/materials/match-batch", response_model=schemas.BatchMatchResponse)
+def match_batch_unmapped_materials(db: Session = Depends(get_db)):
+    """Process every unmapped material and update its mapping with the best match."""
+    _ensure_index(db)
+    unmapped_ids = [
+        m.material_id for m in db.query(models.MaterialMapping)
+        .filter(models.MaterialMapping.status == "Unmapped").all()
+    ]
+    if not unmapped_ids:
+        return schemas.BatchMatchResponse(
+            processed_count=0, matched_count=0, unmatched_count=0, avg_score=0.0, results=[]
+        )
+
+    material_dicts = [_material_match_dict(m) for m in db.query(models.Material)
+                      .filter(models.Material.id.in_(unmapped_ids)).all()]
+
+    batch = semantic_matcher.run_batch_matching(material_dicts, top_n=3, min_score=30.0)
+
+    # Persist fresh embeddings for the batch of unmapped materials
+    if unmapped_ids and semantic_matcher._last_batch_cache:
+        batch_mats = db.query(models.Material).filter(models.Material.id.in_(unmapped_ids)).all()
+        _sync_material_embeddings(db, batch_mats, semantic_matcher._last_batch_cache)
+
+    results = []
+    matched_ids = []
+    for r in batch["results"]:
+        best = r["best_match"]
+        mapping_updated = False
+        if best:
+            crud.create_or_update_mapping(
+                db,
+                schemas.MaterialMappingCreate(
+                    material_id=r["material_id"],
+                    standard_material_id=best["standard_material_id"],
+                    similarity_score=best["similarity_score"],
+                    status="Under Review",
+                ),
+                user="AI Semantic Matcher",
+            )
+            matched_ids.append(r["material_id"])
+            mapping_updated = True
+        mat_row = db.query(models.Material).filter(models.Material.id == r["material_id"]).first()
+        results.append(schemas.MatchMaterialResponse(
+            material_id=r["material_id"],
+            material_code=r["material_code"],
+            description=r["description"],
+            cpse_id=mat_row.cpse_id if mat_row else None,
+            cpse_name=mat_row.cpse.name if mat_row and mat_row.cpse else (mat_row.cpse_id if mat_row else None),
+            match_status="Under Review" if best else "Unmapped",
+            best_match=schemas.MatchResult(**best) if best else None,
+            all_matches=[schemas.MatchResult(**m) for m in r["all_matches"]],
+            mapping_updated=mapping_updated,
+        ))
+
+    crud.create_audit_log(
+        db,
+        action="BATCH_MATCH",
+        old_val=None,
+        new_val=json.dumps({
+            "processed_count": batch["summary"]["processed_count"],
+            "matched_count": len(matched_ids),
+            "matched_material_ids": matched_ids,
+            "avg_score": batch["summary"]["avg_score"],
+        }),
+        user="AI Semantic Matcher",
+    )
+
+    return schemas.BatchMatchResponse(
+        processed_count=batch["summary"]["processed_count"],
+        matched_count=len(matched_ids),
+        unmatched_count=batch["summary"]["unmatched_count"],
+        avg_score=batch["summary"]["avg_score"],
+        results=results,
+    )
+
+@app.post("/api/materials/duplicates/detect")
+def detect_duplicate_clusters(
+    threshold: float = Query(80.0, description="Minimum similarity threshold (0-100) for a duplicate"),
+    limit: int = Query(500, description="Maximum number of materials to scan"),
+    db: Session = Depends(get_db)
+):
+    """Run duplicate detection across CPSE material catalogs."""
+    _ensure_index(db)
+    clusters = _duplicate_clusters(db, threshold=threshold, limit=limit)
+    total = sum(c["material_count"] for c in clusters)
+
+    crud.create_audit_log(
+        db,
+        action="DUPLICATE_DETECTION",
+        old_val=None,
+        new_val=json.dumps({"clusters_found": len(clusters), "total_duplicates": total}),
+        user="AI Semantic Matcher",
+    )
+
+    return {"clusters_found": len(clusters), "total_duplicates": total}
+
+@app.post("/api/matcher/rebuild")
+def rebuild_matcher(db: Session = Depends(get_db)):
+    """Rebuild the TF-IDF index from the current standard_materials table."""
+    count = rebuild_matcher_index(db)
+    return {
+        "message": "Matcher index rebuilt successfully",
+        "indexed_standard_materials": count,
+    }
+
 @app.post("/api/materials/upload")
 async def upload_materials_csv(
     file: UploadFile = File(...),
@@ -220,7 +603,9 @@ def get_standard_material(std_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/standard-materials", response_model=schemas.StandardMaterialOut, status_code=status.HTTP_201_CREATED)
 def create_standard_material(std_mat: schemas.StandardMaterialCreate, db: Session = Depends(get_db)):
-    return crud.create_standard_material(db, std_mat)
+    created = crud.create_standard_material(db, std_mat)
+    rebuild_matcher_index(db)
+    return created
 
 
 # ==========================================

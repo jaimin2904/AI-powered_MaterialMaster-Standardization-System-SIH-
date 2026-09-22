@@ -57,6 +57,12 @@ export async function deleteMaterial(id) {
   });
 }
 
+export async function matchMaterial(materialId) {
+  return await apiFetch(`/materials/${materialId}/match`, {
+    method: 'POST',
+  });
+}
+
 // 3. CSV Material Upload API
 export async function uploadMaterialsCsvFile(file, cpseId = 'ntpc') {
   const formData = new FormData();
@@ -117,12 +123,25 @@ export async function submitApproval(mappingId, decision, comment, reviewedBy = 
   });
 }
 
-// 7. Dashboard Stats API
+// 7. Duplicate Detection API
+export async function getDuplicateClusters(threshold = 80, limit = 500) {
+  const params = new URLSearchParams({ threshold, limit });
+  return await apiFetch(`/materials/duplicates?${params.toString()}`);
+}
+
+export async function detectDuplicateClusters(threshold = 80, limit = 500) {
+  const params = new URLSearchParams({ threshold, limit });
+  return await apiFetch(`/materials/duplicates/detect?${params.toString()}`, {
+    method: 'POST',
+  });
+}
+
+// 8. Dashboard Stats API
 export async function getDashboardStats() {
   return await apiFetch('/dashboard/stats');
 }
 
-// 8. Audit Logs API
+// 9. Audit Logs API
 export async function getAuditLogs() {
   return await apiFetch('/audit-logs');
 }

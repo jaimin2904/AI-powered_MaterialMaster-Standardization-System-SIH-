@@ -91,7 +91,16 @@ def search_materials(
     return query.offset(skip).limit(limit).all()
 
 def create_material(db: Session, material: schemas.MaterialCreate, user: str = "Admin"):
-    db_material = models.Material(**material.model_dump())
+    # Run data normalization & spec extraction
+    from .processor import processor
+    processed = processor.process_material(material.raw_description or material.description, unit=material.unit)
+    
+    mat_data = material.model_dump()
+    mat_data["cleaned_description"] = processed["cleaned_description"]
+    mat_data["normalized_unit"] = processed["normalized_unit"]
+    mat_data["extracted_specs"] = json.dumps(processed["extracted_specs"])
+
+    db_material = models.Material(**mat_data)
     db.add(db_material)
     db.commit()
     db.refresh(db_material)
@@ -241,18 +250,88 @@ def get_audit_logs(db: Session, skip: int = 0, limit: int = 100):
 
 # --- Dashboard Stats ---
 def get_dashboard_stats(db: Session) -> schemas.DashboardStatsOut:
-    total_mats = db.query(models.Material).count()
+    total_materials = db.query(models.Material).count()
+    standard_materials = db.query(models.StandardMaterial).count()
     total_cpses = db.query(models.CPSE).count()
-    harmonized = db.query(models.MaterialMapping).filter(models.MaterialMapping.status == "Confirmed").count()
-    duplicates = db.query(models.MaterialMapping).filter(models.MaterialMapping.status == "Duplicate Cluster").count()
-    pending = db.query(models.MaterialMapping).filter(models.MaterialMapping.status.in_(["Unmapped", "Under Review"])).count()
+    confirmed_matches = db.query(models.MaterialMapping).filter(
+        models.MaterialMapping.status == "Confirmed"
+    ).count()
+    under_review = db.query(models.MaterialMapping).filter(
+        models.MaterialMapping.status == "Under Review"
+    ).count()
+    rejected_matches = db.query(models.Approval).filter(
+        models.Approval.decision == "Rejected"
+    ).count()
+
+    # potential_duplicates: real total from the most recent duplicate/near-duplicate
+    # detection scan (POST /api/materials/duplicates/detect writes a DUPLICATE_DETECTION audit log).
+    potential_duplicates = 0
+    latest_detection = db.query(models.AuditLog).filter(
+        models.AuditLog.action == "DUPLICATE_DETECTION"
+    ).order_by(models.AuditLog.timestamp.desc()).first()
+    if latest_detection and latest_detection.new_value:
+        try:
+            detection = json.loads(latest_detection.new_value)
+            potential_duplicates = int(detection.get("total_duplicates", detection.get("clusters_found", 0)) or 0)
+        except (ValueError, TypeError):
+            potential_duplicates = 0
+
+    # CPSE-wise material counts (real)
+    cpses = []
+    count_rows = dict(
+        db.query(models.Material.cpse_id, func.count(models.Material.id))
+        .group_by(models.Material.cpse_id).all()
+    )
+    confirmed_rows = dict(
+        db.query(models.Material.cpse_id, func.count(models.MaterialMapping.id))
+        .join(models.MaterialMapping, models.MaterialMapping.material_id == models.Material.id)
+        .filter(models.MaterialMapping.status == "Confirmed")
+        .group_by(models.Material.cpse_id).all()
+    )
+    for cpse in db.query(models.CPSE).order_by(models.CPSE.name).all():
+        cpses.append(schemas.CPSEDashboardStat(
+            cpse_id=cpse.id,
+            name=cpse.name,
+            material_count=int(count_rows.get(cpse.id, 0)),
+            confirmed_matches=int(confirmed_rows.get(cpse.id, 0)),
+        ))
+
+    # Pending AI recommendations = real mapping rows awaiting review
+    pending = db.query(models.MaterialMapping).filter(
+        models.MaterialMapping.status.in_(["Unmapped", "Under Review"])
+    ).order_by(models.MaterialMapping.similarity_score.desc()).all()
+    pending_recommendations = []
+    seen_materials = set()
+    for mapping in pending:
+        if mapping.material_id in seen_materials:
+            continue
+        seen_materials.add(mapping.material_id)
+        mat = mapping.material
+        if not mat:
+            continue
+        std = mapping.standard_material
+        pending_recommendations.append(schemas.PendingRecommendation(
+            mapping_id=mapping.id,
+            material_code=mat.material_code,
+            cpse_id=mat.cpse_id,
+            cpse_name=mat.cpse.name if mat.cpse else mat.cpse_id,
+            similarity_score=mapping.similarity_score or 0.0,
+            status=mapping.status,
+            raw_description=mat.raw_description or mat.description,
+            national_code=std.national_code if std else None,
+            standard_description=std.standard_description if std else None,
+        ))
 
     return schemas.DashboardStatsOut(
-        total_materials=total_mats if total_mats > 0 else 2485210,
-        harmonized_materials=harmonized if harmonized > 0 else 1842100,
-        duplicate_clusters=duplicates if duplicates > 0 else 42890,
-        total_cpses=total_cpses if total_cpses > 0 else 48,
-        pending_approvals=pending if pending > 0 else 342,
-        estimated_savings_cr=1420.50,
-        ai_accuracy_percent=96.8
+        total_materials=total_materials,
+        standard_materials=standard_materials,
+        total_cpses=total_cpses,
+        confirmed_matches=confirmed_matches,
+        under_review=under_review,
+        rejected_matches=rejected_matches,
+        potential_duplicates=potential_duplicates,
+        ai_accuracy_percent=None,
+        estimated_savings_cr=None,
+        cpses=cpses,
+        pending_recommendations=pending_recommendations,
     )

@@ -24,6 +24,10 @@ class Material(Base):
     unit = Column(String, nullable=False)
     category = Column(String, nullable=False, index=True)
     raw_description = Column(Text, nullable=False)
+    cleaned_description = Column(Text, nullable=True)
+    normalized_unit = Column(String, nullable=True)
+    extracted_specs = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON: {"key": prepared_text, "vector": [...]}
     unit_cost = Column(Float, default=0.0)
     stock_qty = Column(Integer, default=0)
     plant_location = Column(String, nullable=True)
@@ -41,6 +45,7 @@ class StandardMaterial(Base):
     specification = Column(Text, nullable=True)  # JSON string or text spec dict
     unit = Column(String, nullable=False)
     category = Column(String, nullable=False, index=True)
+    embedding = Column(Text, nullable=True)  # JSON: {"key": prepared_text, "vector": [...]}
 
     mappings = relationship("MaterialMapping", back_populates="standard_material")
 

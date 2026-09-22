@@ -11,40 +11,60 @@ import {
   Zap,
   Clock,
   Layers,
-  BarChart2
+  BarChart2,
+  XCircle,
+  AlertCircle
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
-import { SYSTEM_STATS, AI_APPROVAL_QUEUE, AUDIT_LOGS } from '../data/mockData';
+import { AUDIT_LOGS } from '../data/mockData';
 import { getDashboardStats, getAuditLogs } from '../services/api';
 
 export const DashboardPage = ({ setActiveTab, showToast }) => {
   const [stats, setStats] = useState({
-    totalMaterials: SYSTEM_STATS.totalMaterialsCataloged,
-    harmonizedMaterials: SYSTEM_STATS.totalHarmonizedMasters,
-    duplicateClusters: SYSTEM_STATS.duplicateClustersFound,
-    estimatedSavingsCr: SYSTEM_STATS.estimatedCostSavingsCr,
-    aiAccuracyPercent: SYSTEM_STATS.aiAccuracyPercent,
-    pendingApprovals: SYSTEM_STATS.pendingApprovals,
+    total_materials: 0,
+    standard_materials: 0,
+    total_cpses: 0,
+    confirmed_matches: 0,
+    under_review: 0,
+    rejected_matches: 0,
+    potential_duplicates: 0,
+    ai_accuracy_percent: null,
+    estimated_savings_cr: null,
+    cpses: [],
+    pending_recommendations: [],
   });
+  const [isStatsLoading, setIsStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [auditLogs, setAuditLogs] = useState(AUDIT_LOGS);
 
   useEffect(() => {
     // Fetch stats from backend API
+    setIsStatsLoading(true);
+    setStatsError(null);
     getDashboardStats()
       .then((data) => {
         if (data) {
           setStats({
-            totalMaterials: data.total_materials.toLocaleString('en-IN'),
-            harmonizedMaterials: data.harmonized_materials.toLocaleString('en-IN'),
-            duplicateClusters: data.duplicate_clusters.toLocaleString('en-IN'),
-            estimatedSavingsCr: data.estimated_savings_cr,
-            aiAccuracyPercent: `${data.ai_accuracy_percent}%`,
-            pendingApprovals: data.pending_approvals,
+            total_materials: data.total_materials || 0,
+            standard_materials: data.standard_materials || 0,
+            total_cpses: data.total_cpses || 0,
+            confirmed_matches: data.confirmed_matches || 0,
+            under_review: data.under_review || 0,
+            rejected_matches: data.rejected_matches || 0,
+            potential_duplicates: data.potential_duplicates || 0,
+            ai_accuracy_percent: data.ai_accuracy_percent ?? null,
+            estimated_savings_cr: data.estimated_savings_cr ?? null,
+            cpses: data.cpses || [],
+            pending_recommendations: data.pending_recommendations || [],
           });
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        setStatsError(err.message || 'Failed to load dashboard statistics');
+      })
+      .finally(() => setIsStatsLoading(false));
 
     // Fetch audit logs from backend API
     getAuditLogs()
@@ -64,7 +84,12 @@ export const DashboardPage = ({ setActiveTab, showToast }) => {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [refreshKey]);
+
+  const confirmedRate = stats.total_materials > 0
+    ? ((stats.confirmed_matches / stats.total_materials) * 100).toFixed(1)
+    : '0.0';
+  const activeCpses = stats.cpses.filter((c) => c.material_count > 0).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -83,6 +108,9 @@ export const DashboardPage = ({ setActiveTab, showToast }) => {
               National Material Harmonization & Master Data Hub
             </h2>
             <Badge variant="ai"><Sparkles size={12} /> Live API Sync</Badge>
+            {isStatsLoading && (
+              <div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
+            )}
           </div>
           <p style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
             Cross-CPSE Material Master Catalogues Standardized under NUMC Architecture (FastAPI & PostgreSQL Backend Connected).
@@ -99,75 +127,136 @@ export const DashboardPage = ({ setActiveTab, showToast }) => {
             onClick={() => setActiveTab('approval')}
             className="btn btn-primary"
           >
-            Review Pending AI Recommendations ({stats.pendingApprovals})
+            Review Pending AI Recommendations ({stats.under_review})
           </button>
         </div>
       </div>
 
-      {/* Top KPI Metrics Cards (5 Columns) */}
+      {/* Dashboard Error State */}
+      {statsError && (
+        <div className="card empty-state" style={{ padding: '16px' }}>
+          <AlertCircle size={20} className="empty-state-icon" />
+          <div style={{ fontSize: '13px', color: '#0F172A', fontWeight: 600 }}>
+            Dashboard statistics unavailable
+          </div>
+          <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+            {statsError}. Ensure the backend AI service is running at http://localhost:8000.
+          </div>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ marginTop: '10px' }}
+            onClick={() => setRefreshKey((k) => k + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Top KPI Metrics Cards */}
       <div className="grid-5">
         <div className="stat-card">
           <div className="stat-header">
-            <span className="stat-label">Total Catalog Items</span>
+            <span className="stat-label">Total Materials</span>
             <div className="stat-icon" style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}>
               <Database size={18} />
             </div>
           </div>
-          <div className="stat-value">{stats.totalMaterials}</div>
+          <div className="stat-value">{stats.total_materials.toLocaleString('en-IN')}</div>
           <div className="stat-change" style={{ color: '#16A34A' }}>
-            <TrendingUp size={13} /> Across 48 Active CPSEs
+            <TrendingUp size={13} /> Active in {activeCpses} CPSEs
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
-            <span className="stat-label">Harmonized Masters</span>
-            <div className="stat-icon" style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}>
-              <CheckCircle2 size={18} />
+            <span className="stat-label">Standard Materials</span>
+            <div className="stat-icon" style={{ backgroundColor: '#F8FAFC', color: '#475569' }}>
+              <Layers size={18} />
             </div>
           </div>
-          <div className="stat-value">{stats.harmonizedMaterials}</div>
-          <div className="stat-change" style={{ color: '#16A34A' }}>
-            74.1% Catalog Coverage
+          <div className="stat-value">{stats.standard_materials.toLocaleString('en-IN')}</div>
+          <div className="stat-change" style={{ color: '#475569' }}>
+            National master catalog items
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
-            <span className="stat-label">Duplicate Clusters</span>
+            <span className="stat-label">Potential Duplicates</span>
             <div className="stat-icon" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
               <Copy size={18} />
             </div>
           </div>
-          <div className="stat-value">{stats.duplicateClusters}</div>
+          <div className="stat-value">{stats.potential_duplicates.toLocaleString('en-IN')}</div>
           <div className="stat-change" style={{ color: '#DC2626' }}>
-            High Value Inventory Overlap
+            From latest AI detection scan
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
-            <span className="stat-label">Est. Capital Savings</span>
-            <div className="stat-icon" style={{ backgroundColor: '#FFFBEB', color: '#D97706' }}>
-              <Zap size={18} />
+            <span className="stat-label">Confirmed Matches</span>
+            <div className="stat-icon" style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}>
+              <CheckCircle2 size={18} />
             </div>
           </div>
-          <div className="stat-value">₹{stats.estimatedSavingsCr} Cr</div>
+          <div className="stat-value">{stats.confirmed_matches.toLocaleString('en-IN')}</div>
+          <div className="stat-change" style={{ color: '#16A34A' }}>
+            {confirmedRate}% of catalog confirmed
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Under Review</span>
+            <div className="stat-icon" style={{ backgroundColor: '#FFFBEB', color: '#D97706' }}>
+              <Clock size={18} />
+            </div>
+          </div>
+          <div className="stat-value">{stats.under_review.toLocaleString('en-IN')}</div>
           <div className="stat-change" style={{ color: '#D97706' }}>
-            Bulk Procurement Power
+            Awaiting custodian review
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Rejected Matches</span>
+            <div className="stat-icon" style={{ backgroundColor: '#FFF7F7', color: '#DC2626' }}>
+              <XCircle size={18} />
+            </div>
+          </div>
+          <div className="stat-value">{stats.rejected_matches.toLocaleString('en-IN')}</div>
+          <div className="stat-change" style={{ color: '#DC2626' }}>
+            Review decisions recorded
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Total CPSEs</span>
+            <div className="stat-icon" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>
+              <Building2 size={18} />
+            </div>
+          </div>
+          <div className="stat-value">{stats.total_cpses.toLocaleString('en-IN')}</div>
+          <div className="stat-change" style={{ color: '#4F46E5' }}>
+            Registered CPSE enterprises
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-header">
             <span className="stat-label">AI Matching Accuracy</span>
-            <div className="stat-icon" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>
-              <Sparkles size={18} />
+            <div className="stat-icon" style={{ backgroundColor: '#F8FAFC', color: '#64748B' }}>
+              <ShieldCheck size={18} />
             </div>
           </div>
-          <div className="stat-value">{stats.aiAccuracyPercent}</div>
-          <div className="stat-change" style={{ color: '#4F46E5' }}>
-            Validated by Nodal Experts
+          <div className="stat-value">
+            {stats.ai_accuracy_percent == null ? 'N/A' : `${stats.ai_accuracy_percent}%`}
+          </div>
+          <div className="stat-change" style={{ color: '#64748B' }}>
+            No ground-truth dataset
           </div>
         </div>
       </div>
@@ -187,30 +276,43 @@ export const DashboardPage = ({ setActiveTab, showToast }) => {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {SYSTEM_STATS.harmonizationRateByCPSE.map((cpse, idx) => (
-              <div key={idx}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-                  <span style={{ fontWeight: 600, color: '#0F172A' }}>{cpse.name}</span>
-                  <span style={{ fontSize: '12px', color: '#64748B' }}>
-                    <strong>{cpse.harmonized.toLocaleString()}</strong> / {cpse.totalItems.toLocaleString()} items ({cpse.rate}%)
-                  </span>
-                </div>
-                <div style={{
-                  height: '8px',
-                  backgroundColor: '#F1F5F9',
-                  borderRadius: '4px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    width: `${cpse.rate}%`,
-                    height: '100%',
-                    backgroundColor: cpse.rate > 90 ? '#2563EB' : '#3B82F6',
-                    borderRadius: '4px',
-                    transition: 'width 0.5s ease'
-                  }} />
+            {stats.cpses.length === 0 ? (
+              <div className="card empty-state" style={{ padding: '16px' }}>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>
+                  No CPSE material data available yet.
                 </div>
               </div>
-            ))}
+            ) : (
+              stats.cpses.map((cpse, idx) => {
+                const rate = cpse.material_count > 0
+                  ? Math.round((cpse.confirmed_matches / cpse.material_count) * 100)
+                  : 0;
+                return (
+                  <div key={idx}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
+                      <span style={{ fontWeight: 600, color: '#0F172A' }}>{cpse.name}</span>
+                      <span style={{ fontSize: '12px', color: '#64748B' }}>
+                        <strong>{cpse.confirmed_matches.toLocaleString()}</strong> / {cpse.material_count.toLocaleString()} items ({rate}%)
+                      </span>
+                    </div>
+                    <div style={{
+                      height: '8px',
+                      backgroundColor: '#F1F5F9',
+                      borderRadius: '4px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        width: `${Math.min(100, rate)}%`,
+                        height: '100%',
+                        backgroundColor: rate > 90 ? '#2563EB' : '#3B82F6',
+                        borderRadius: '4px',
+                        transition: 'width 0.5s ease'
+                      }} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -222,44 +324,54 @@ export const DashboardPage = ({ setActiveTab, showToast }) => {
               <div className="card-subtitle">Automated standardization suggestions awaiting custodian approval</div>
             </div>
             <button className="btn btn-ai btn-sm" onClick={() => setActiveTab('approval')}>
-              Review Queue ({AI_APPROVAL_QUEUE.length})
+              Review Queue ({stats.pending_recommendations.length})
             </button>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {AI_APPROVAL_QUEUE.map((item) => (
-              <div key={item.id} style={{
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                backgroundColor: '#F8FAFC',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Badge variant="ai">{item.type}</Badge>
-                  <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>{item.cpseName}</span>
-                </div>
-                <div style={{ fontSize: '12px', color: '#0F172A', fontWeight: 600 }}>
-                  Raw Text: <span style={{ color: '#475569', fontWeight: 400 }}>"{item.rawText}"</span>
-                </div>
-                <div style={{ fontSize: '12px', color: '#1D4ED8', fontWeight: 500 }}>
-                  AI Proposal: {item.proposedText}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                  <span style={{ fontSize: '11px', color: '#059669', fontWeight: 600 }}>
-                    Confidence Score: {item.aiConfidence}%
-                  </span>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => showToast(`Approved recommendation for ${item.localCode}`, 'success')}
-                  >
-                    Quick Approve
-                  </button>
+            {stats.pending_recommendations.length === 0 ? (
+              <div className="card empty-state" style={{ padding: '16px' }}>
+                <div style={{ fontSize: '12px', color: '#64748B' }}>
+                  No recommendations awaiting review.
                 </div>
               </div>
-            ))}
+            ) : (
+              stats.pending_recommendations.map((item) => (
+                <div key={item.mapping_id} style={{
+                  padding: '12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: '#F8FAFC',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Badge variant={item.status === 'Under Review' ? 'warning' : 'neutral'}>{item.status}</Badge>
+                    <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>
+                      {item.cpse_name} · {item.material_code}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#0F172A', fontWeight: 600 }}>
+                    Raw Text: <span style={{ color: '#475569', fontWeight: 400 }}>"{item.raw_description}"</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#1D4ED8', fontWeight: 500 }}>
+                    AI Proposal: {item.standard_description || 'No standard candidate yet'}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                    <span style={{ fontSize: '11px', color: '#059669', fontWeight: 600 }}>
+                      Confidence Score: {item.similarity_score?.toFixed(1) || '0.0'}%
+                    </span>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => showToast(`Approved recommendation for ${item.material_code}`, 'success')}
+                    >
+                      Quick Approve
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
