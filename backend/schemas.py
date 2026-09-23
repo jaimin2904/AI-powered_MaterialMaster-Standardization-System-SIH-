@@ -174,6 +174,56 @@ class DashboardStatsOut(BaseModel):
     cpses: List[CPSEDashboardStat] = []
     pending_recommendations: List[PendingRecommendation] = []
 
+# --- Analytics Summary Schema ---
+class CategoryCount(BaseModel):
+    category: str
+    count: int
+
+class CPCensusStat(BaseModel):
+    cpse_id: str
+    cpse_name: str
+    count: int
+
+class ReviewerCount(BaseModel):
+    reviewed_by: str
+    count: int
+
+class RecentApproval(BaseModel):
+    id: int
+    decision: str
+    comment: Optional[str] = None
+    reviewed_by: str
+    timestamp: datetime
+
+class ApprovalSummary(BaseModel):
+    total: int
+    approved: int
+    rejected: int
+    modified: int
+    by_reviewer: List[ReviewerCount] = []
+    recent: List[RecentApproval] = []
+
+class SimilaritySummary(BaseModel):
+    total: int
+    scored: int
+    avg_score: Optional[float] = None
+    min_score: Optional[float] = None
+    max_score: Optional[float] = None
+    distribution: Dict[str, int] = {}
+
+class AnalyticsSummary(BaseModel):
+    total_materials: int
+    standard_materials: int
+    total_cpses: int
+    confirmed_matches: int
+    under_review: int
+    rejected_matches: int
+    potential_duplicates: int
+    materials_by_category: List[CategoryCount] = []
+    materials_by_cpse: List[CPCensusStat] = []
+    approval_summary: ApprovalSummary
+    similarity_summary: SimilaritySummary
+
 
 # --- AI/ML Matching Engine Schemas ---
 class MatchSingleRequest(BaseModel):

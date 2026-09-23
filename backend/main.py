@@ -651,6 +651,14 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
 
 # ==========================================
+# 7b. ANALYTICS SUMMARY ENDPOINT
+# ==========================================
+@app.get("/api/analytics/summary", response_model=schemas.AnalyticsSummary)
+def get_analytics_summary(db: Session = Depends(get_db)):
+    return crud.get_analytics_summary(db)
+
+
+# ==========================================
 # 8. AUDIT HISTORY ENDPOINT
 # ==========================================
 @app.get("/api/audit-logs", response_model=List[schemas.AuditLogOut])

@@ -141,6 +141,11 @@ export async function getDashboardStats() {
   return await apiFetch('/dashboard/stats');
 }
 
+// 8b. Analytics Summary API
+export async function getAnalyticsSummary() {
+  return await apiFetch('/analytics/summary');
+}
+
 // 9. Audit Logs API
 export async function getAuditLogs() {
   return await apiFetch('/audit-logs');

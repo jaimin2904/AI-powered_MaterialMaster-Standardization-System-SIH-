@@ -335,3 +335,134 @@ def get_dashboard_stats(db: Session) -> schemas.DashboardStatsOut:
         cpses=cpses,
         pending_recommendations=pending_recommendations,
     )
+
+
+def get_analytics_summary(db: Session) -> schemas.AnalyticsSummary:
+    total_materials = db.query(models.Material).count()
+    standard_materials = db.query(models.StandardMaterial).count()
+    total_cpses = db.query(models.CPSE).count()
+    confirmed_matches = db.query(models.MaterialMapping).filter(
+        models.MaterialMapping.status == "Confirmed"
+    ).count()
+    under_review = db.query(models.MaterialMapping).filter(
+        models.MaterialMapping.status == "Under Review"
+    ).count()
+    rejected_matches = db.query(models.Approval).filter(
+        models.Approval.decision == "Rejected"
+    ).count()
+
+    # potential_duplicates: real total from the most recent duplicate/near-duplicate
+    # detection scan (POST /api/materials/duplicates/detect writes a DUPLICATE_DETECTION audit log).
+    potential_duplicates = 0
+    latest_detection = db.query(models.AuditLog).filter(
+        models.AuditLog.action == "DUPLICATE_DETECTION"
+    ).order_by(models.AuditLog.timestamp.desc()).first()
+    if latest_detection and latest_detection.new_value:
+        try:
+            detection = json.loads(latest_detection.new_value)
+            potential_duplicates = int(detection.get("total_duplicates", detection.get("clusters_found", 0)) or 0)
+        except (ValueError, TypeError):
+            potential_duplicates = 0
+
+    # Materials grouped by category (real GROUP BY)
+    materials_by_category = [
+        schemas.CategoryCount(category=category, count=int(count))
+        for category, count in db.query(models.Material.category, func.count(models.Material.id))
+        .group_by(models.Material.category)
+        .order_by(func.count(models.Material.id).desc())
+        .all()
+    ]
+
+    # Materials grouped by CPSE (real GROUP BY)
+    cpse_names = {c.id: c.name for c in db.query(models.CPSE).all()}
+    materials_by_cpse = [
+        schemas.CPCensusStat(
+            cpse_id=cpse_id,
+            cpse_name=cpse_names.get(cpse_id, cpse_id),
+            count=int(count),
+        )
+        for cpse_id, count in db.query(models.Material.cpse_id, func.count(models.Material.id))
+        .group_by(models.Material.cpse_id)
+        .order_by(func.count(models.Material.id).desc())
+        .all()
+        if cpse_id
+    ]
+
+    # Approval summary from real Approval records
+    approved = db.query(models.Approval).filter(models.Approval.decision == "Approved").count()
+    rejected = db.query(models.Approval).filter(models.Approval.decision == "Rejected").count()
+    modified = db.query(models.Approval).filter(models.Approval.decision == "Modified").count()
+    total_approvals = db.query(models.Approval).count()
+    by_reviewer = [
+        schemas.ReviewerCount(reviewed_by=reviewed_by, count=int(count))
+        for reviewed_by, count in db.query(models.Approval.reviewed_by, func.count(models.Approval.id))
+        .group_by(models.Approval.reviewed_by)
+        .order_by(func.count(models.Approval.id).desc())
+        .all()
+    ]
+    recent = [
+        schemas.RecentApproval(
+            id=a.id,
+            decision=a.decision,
+            comment=a.comment,
+            reviewed_by=a.reviewed_by,
+            timestamp=a.timestamp,
+        )
+        for a in db.query(models.Approval).order_by(models.Approval.timestamp.desc()).limit(5).all()
+    ]
+
+    # Similarity summary from real MaterialMapping.similarity_score (scored rows only)
+    scored_rows = db.query(models.MaterialMapping).filter(
+        models.MaterialMapping.similarity_score.isnot(None),
+        models.MaterialMapping.similarity_score > 0,
+    ).all()
+    distribution = {"<25": 0, "25-49": 0, "50-74": 0, ">=75": 0}
+    for row in scored_rows:
+        score = row.similarity_score
+        if score >= 75:
+            distribution[">=75"] += 1
+        elif score >= 50:
+            distribution["50-74"] += 1
+        elif score >= 25:
+            distribution["25-49"] += 1
+        else:
+            distribution["<25"] += 1
+
+    original = db.query(models.MaterialMapping.id).filter(
+        models.MaterialMapping.similarity_score.isnot(None),
+        models.MaterialMapping.similarity_score > 0,
+    ).count()
+    avg_score = min_score = max_score = None
+    if original:
+        numeric = [r.similarity_score for r in scored_rows]
+        avg_score = round(sum(numeric) / len(numeric), 2)
+        min_score = float(min(numeric))
+        max_score = float(max(numeric))
+
+    return schemas.AnalyticsSummary(
+        total_materials=total_materials,
+        standard_materials=standard_materials,
+        total_cpses=total_cpses,
+        confirmed_matches=confirmed_matches,
+        under_review=under_review,
+        rejected_matches=rejected_matches,
+        potential_duplicates=potential_duplicates,
+        materials_by_category=materials_by_category,
+        materials_by_cpse=materials_by_cpse,
+        approval_summary=schemas.ApprovalSummary(
+            total=total_approvals,
+            approved=approved,
+            rejected=rejected,
+            modified=modified,
+            by_reviewer=by_reviewer,
+            recent=recent,
+        ),
+        similarity_summary=schemas.SimilaritySummary(
+            total=db.query(models.MaterialMapping).count(),
+            scored=original,
+            avg_score=avg_score,
+            min_score=min_score,
+            max_score=max_score,
+            distribution=distribution,
+        ),
+    )
