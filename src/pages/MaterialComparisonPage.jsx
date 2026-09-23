@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import { GitCompare, Sparkles, AlertTriangle, CheckCircle2, X, Plus, ArrowRight, ShieldCheck } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
-import { MATERIALS_DATA } from '../data/mockData';
 
 export const MaterialComparisonPage = ({ comparisonItems, setComparisonItems, setActiveTab, showToast }) => {
   const [isUnifyModalOpen, setIsUnifyModalOpen] = useState(false);
 
-  // If no items in comparison, default to first 3 items from mock data for instant preview
-  const displayItems = comparisonItems.length > 0 ? comparisonItems : MATERIALS_DATA.slice(0, 3);
+  // Comparison page uses real catalog items only (added from Material Search).
+  const displayItems = comparisonItems;
 
   const handleRemoveItem = (code) => {
     const updated = displayItems.filter((i) => i.localCode !== code);
@@ -47,6 +46,20 @@ export const MaterialComparisonPage = ({ comparisonItems, setComparisonItems, se
         </div>
       </div>
 
+      {/* Empty state when no real items are selected */}
+      {displayItems.length === 0 ? (
+        <div className="card empty-state" style={{ padding: '28px' }}>
+          <GitCompare size={28} className="empty-state-icon" />
+          <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>No Materials Selected for Comparison</div>
+          <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
+            Pick materials from the enterprise catalog and add them here to compare technical specifications side-by-side.
+          </div>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: '14px' }} onClick={() => setActiveTab('search')}>
+            <Plus size={14} /> Search Materials
+          </button>
+        </div>
+      ) : (
+        <>
       {/* AI Harmonization Recommendation Banner */}
       <div className="card" style={{
         backgroundColor: '#EEF2FF',
@@ -216,8 +229,11 @@ export const MaterialComparisonPage = ({ comparisonItems, setComparisonItems, se
           </table>
         </div>
       </div>
+        </>
+      )}
 
       {/* Confirmation Modal for Unification */}
+      {displayItems.length > 0 && (
       <Modal
         isOpen={isUnifyModalOpen}
         onClose={() => setIsUnifyModalOpen(false)}
@@ -257,6 +273,7 @@ export const MaterialComparisonPage = ({ comparisonItems, setComparisonItems, se
           </div>
         </div>
       </Modal>
+      )}
     </div>
   );
 };

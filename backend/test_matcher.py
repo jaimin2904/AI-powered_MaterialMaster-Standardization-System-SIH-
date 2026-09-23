@@ -53,7 +53,7 @@ class TestSemanticMatcher(unittest.TestCase):
         self.assertTrue(with_cat)
         base_score = no_cat[0]["similarity_score"]
         boosted_score = with_cat[0]["similarity_score"]
-        self.assertEqual(boosted_score, min(base_score + 5.0, 100.0))
+        self.assertAlmostEqual(boosted_score, min(base_score + 5.0, 100.0), places=6)
         self.assertGreater(boosted_score, base_score)
         self.assertTrue(with_cat[0]["is_category_match"])
 

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import Drawer from '../components/common/Drawer';
-import { MATERIALS_DATA, CPSE_LIST } from '../data/mockData';
+import { CPSE_LIST } from '../data/mockData';
 import { getMaterials, matchMaterial, submitApproval } from '../services/api';
 
 const MATCH_STATUS_VARIANTS = {
@@ -47,8 +47,10 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
 
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [retryKey, setRetryKey] = useState(0);
   const [selectedItemDetail, setSelectedItemDetail] = useState(null);
-  const [materials, setMaterials] = useState(MATERIALS_DATA);
+  const [materials, setMaterials] = useState([]);
 
   // AI Material Match state
   const [matchingMaterial, setMatchingMaterial] = useState(null);
@@ -65,6 +67,7 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
   // Fetch materials from API whenever filters change
   useEffect(() => {
     setIsLoading(true);
+    setLoadError(null);
     getMaterials(selectedCpse, searchTerm, selectedCategory, selectedStatus)
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -98,20 +101,18 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
             };
           });
           setMaterials(mapped);
-        } else if (!searchTerm && selectedCategory === 'ALL' && selectedCpse === 'all') {
-          setMaterials(MATERIALS_DATA);
         } else {
           setMaterials([]);
         }
       })
-      .catch(() => {
-        // Fallback to local mock data filtering on network error
-        setMaterials(MATERIALS_DATA);
+      .catch((err) => {
+        setMaterials([]);
+        setLoadError(err.message || 'Failed to load materials');
       })
       .finally(() => {
         setIsLoading(false);
       });
-  }, [selectedCpse, searchTerm, selectedCategory, selectedStatus]);
+  }, [selectedCpse, searchTerm, selectedCategory, selectedStatus, retryKey]);
 
   const filteredMaterials = useMemo(() => {
     return materials.filter((mat) => {
@@ -361,6 +362,17 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
           <div className="loading-spinner" style={{ margin: '0 auto 16px' }} />
           <div style={{ fontWeight: 600, color: '#0F172A' }}>Running AI Vector Search Across 2.4 Million Items...</div>
           <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>Normalizing technical specs & indexing CPSE databases</div>
+        </div>
+      ) : loadError ? (
+        <div className="card empty-state">
+          <AlertCircle className="empty-state-icon" />
+          <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>Failed to Load Materials</div>
+          <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
+            {loadError}. Ensure the backend AI service is running at http://localhost:8000.
+          </div>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: '14px' }} onClick={() => setRetryKey((k) => k + 1)}>
+            Retry
+          </button>
         </div>
       ) : filteredMaterials.length === 0 ? (
         <div className="card empty-state">
