@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search,
-  Filter,
-  SlidersHorizontal,
   Eye,
   GitCompare,
   Sparkles,
-  Building2,
   Package,
   Layers,
   RefreshCw,
@@ -14,12 +11,28 @@ import {
   X,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  SlidersHorizontal,
+  Building2,
+  MapPin,
+  IndianRupee,
+  Boxes,
+  ChevronRight,
+  Database,
+  ShieldCheck,
+  ArrowRight,
+  Filter,
+  Check
 } from 'lucide-react';
+
 import Badge from '../components/common/Badge';
 import Drawer from '../components/common/Drawer';
 import { CPSE_LIST } from '../data/mockData';
-import { getMaterials, matchMaterial, submitApproval } from '../services/api';
+import {
+  getMaterials,
+  matchMaterial,
+  submitApproval
+} from '../services/api';
 
 const MATCH_STATUS_VARIANTS = {
   Confirmed: 'success',
@@ -30,76 +43,390 @@ const MATCH_STATUS_VARIANTS = {
 
 const classifyRecommendation = (score, bestMatch) => {
   if (!bestMatch || !score || score < 50) {
-    return { label: 'Different Material', variant: 'danger' };
+    return {
+      label: 'Different Material',
+      variant: 'danger'
+    };
   }
+
   if (score >= 75) {
-    return { label: 'Potential Equivalent Material', variant: 'success' };
+    return {
+      label: 'Potential Equivalent Material',
+      variant: 'success'
+    };
   }
-  return { label: 'Possible Near Duplicate', variant: 'warning' };
+
+  return {
+    label: 'Possible Near Duplicate',
+    variant: 'warning'
+  };
 };
 
-export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonItems, setComparisonItems, setActiveTab, showToast }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [selectedStatus, setSelectedStatus] = useState('ALL');
-  const [isAiSemantic, setIsAiSemantic] = useState(true);
-  const [inStockOnly, setInStockOnly] = useState(false);
-  const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
+/* =========================================================
+   SMALL REUSABLE UI COMPONENTS
+========================================================= */
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState(null);
-  const [retryKey, setRetryKey] = useState(0);
-  const [selectedItemDetail, setSelectedItemDetail] = useState(null);
-  const [materials, setMaterials] = useState([]);
+const SectionTitle = ({
+  icon: Icon,
+  title,
+  subtitle,
+  tone = 'green',
+  right
+}) => {
+  const tones = {
+    green: ['#EAF7F1', '#078A58'],
+    purple: ['#F1EDFF', '#7048C8'],
+    blue: ['#EEF5FF', '#416FA8'],
+    gray: ['#F2F5F3', '#64716A']
+  };
 
-  // AI Material Match state
-  const [matchingMaterial, setMatchingMaterial] = useState(null);
-  const [isMatchOpen, setIsMatchOpen] = useState(false);
-  const [isMatchLoading, setIsMatchLoading] = useState(false);
-  const [matchResult, setMatchResult] = useState(null);
-  const [matchError, setMatchError] = useState(null);
+  const [background, color] =
+    tones[tone] || tones.green;
 
-  // Human Review & Approval state
-  const [reviewComment, setReviewComment] = useState('');
-  const [isReviewSubmitting, setIsReviewSubmitting] = useState(false);
-  const [reviewError, setReviewError] = useState(null);
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '12px',
+        marginBottom: '14px'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '9px',
+          minWidth: 0
+        }}
+      >
+        <div
+          style={{
+            width: '34px',
+            height: '34px',
+            borderRadius: '10px',
+            background,
+            color,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}
+        >
+          <Icon size={16} />
+        </div>
 
-  // Fetch materials from API whenever filters change
+        <div style={{ minWidth: 0 }}>
+          <h3
+            style={{
+              margin: 0,
+              color: '#25322B',
+              fontSize: '12px',
+              fontWeight: 800
+            }}
+          >
+            {title}
+          </h3>
+
+          {subtitle && (
+            <p
+              style={{
+                margin: '3px 0 0',
+                color: '#89938D',
+                fontSize: '9px',
+                lineHeight: 1.4
+              }}
+            >
+              {subtitle}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {right}
+    </div>
+  );
+};
+
+const ActionButton = ({
+  children,
+  onClick,
+  icon: Icon,
+  variant = 'secondary',
+  disabled = false,
+  title,
+  fullWidth = false
+}) => {
+  const variants = {
+    primary: {
+      background: '#078A58',
+      border: '#078A58',
+      color: '#FFFFFF'
+    },
+    secondary: {
+      background: '#FFFFFF',
+      border: '#E0E7E2',
+      color: '#526059'
+    },
+    soft: {
+      background: '#EAF7F1',
+      border: '#CDEBDD',
+      color: '#087A50'
+    },
+    danger: {
+      background: '#FFF3F3',
+      border: '#F0D1D1',
+      color: '#B83D3D'
+    },
+    purple: {
+      background: '#F3EFFF',
+      border: '#DDD4F8',
+      color: '#7048C8'
+    }
+  };
+
+  const current =
+    variants[variant] || variants.secondary;
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      style={{
+        height: '34px',
+        width: fullWidth ? '100%' : 'auto',
+        padding: '0 11px',
+        borderRadius: '9px',
+        border: `1px solid ${current.border}`,
+        background: current.background,
+        color: current.color,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6px',
+        fontSize: '9px',
+        fontWeight: 750,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {Icon && <Icon size={13} />}
+      {children}
+    </button>
+  );
+};
+
+const InfoBox = ({
+  label,
+  value,
+  icon: Icon,
+  tone = 'gray'
+}) => {
+  const tones = {
+    gray: ['#F6F8F7', '#66736B'],
+    green: ['#EAF7F1', '#078A58'],
+    blue: ['#EEF5FF', '#416FA8'],
+    purple: ['#F3EFFF', '#7048C8'],
+    orange: ['#FFF7E8', '#B77900']
+  };
+
+  const [background, color] =
+    tones[tone] || tones.gray;
+
+  return (
+    <div
+      style={{
+        padding: '11px',
+        borderRadius: '11px',
+        border: '1px solid #E7ECE9',
+        background: '#FFFFFF'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '5px',
+          color: '#8A938E',
+          fontSize: '8px',
+          fontWeight: 700,
+          textTransform: 'uppercase'
+        }}
+      >
+        {Icon && (
+          <span
+            style={{
+              width: '22px',
+              height: '22px',
+              borderRadius: '7px',
+              background,
+              color,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Icon size={11} />
+          </span>
+        )}
+
+        {label}
+      </div>
+
+      <div
+        style={{
+          marginTop: '7px',
+          color: '#26332C',
+          fontSize: '11px',
+          fontWeight: 750,
+          wordBreak: 'break-word'
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+};
+
+/* =========================================================
+   MAIN PAGE
+========================================================= */
+
+export const MaterialSearchPage = ({
+  selectedCpse,
+  setSelectedCpse,
+  comparisonItems,
+  setComparisonItems,
+  setActiveTab,
+  showToast
+}) => {
+  const [searchTerm, setSearchTerm] =
+    useState('');
+
+  const [selectedCategory, setSelectedCategory] =
+    useState('ALL');
+
+  const [selectedStatus, setSelectedStatus] =
+    useState('ALL');
+
+  const [isAiSemantic, setIsAiSemantic] =
+    useState(true);
+
+  const [inStockOnly, setInStockOnly] =
+    useState(false);
+
+  const [viewMode, setViewMode] =
+    useState('table');
+
+  const [isLoading, setIsLoading] =
+    useState(false);
+
+  const [loadError, setLoadError] =
+    useState(null);
+
+  const [retryKey, setRetryKey] =
+    useState(0);
+
+  const [selectedItemDetail, setSelectedItemDetail] =
+    useState(null);
+
+  const [materials, setMaterials] =
+    useState([]);
+
+  /* AI matching */
+  const [matchingMaterial, setMatchingMaterial] =
+    useState(null);
+
+  const [isMatchOpen, setIsMatchOpen] =
+    useState(false);
+
+  const [isMatchLoading, setIsMatchLoading] =
+    useState(false);
+
+  const [matchResult, setMatchResult] =
+    useState(null);
+
+  const [matchError, setMatchError] =
+    useState(null);
+
+  /* Human review */
+  const [reviewComment, setReviewComment] =
+    useState('');
+
+  const [isReviewSubmitting, setIsReviewSubmitting] =
+    useState(false);
+
+  const [reviewError, setReviewError] =
+    useState(null);
+
+  /* =========================================================
+     FETCH MATERIALS
+  ========================================================== */
+
   useEffect(() => {
     setIsLoading(true);
     setLoadError(null);
-    getMaterials(selectedCpse, searchTerm, selectedCategory, selectedStatus)
+
+    getMaterials(
+      selectedCpse,
+      searchTerm,
+      selectedCategory,
+      selectedStatus
+    )
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
           const mapped = data.map((m) => {
             let specs = {};
+
             try {
-              specs = typeof m.specification === 'string' ? JSON.parse(m.specification) : m.specification || {};
+              specs =
+                typeof m.specification === 'string'
+                  ? JSON.parse(m.specification)
+                  : m.specification || {};
             } catch (e) {
-              specs = { Description: m.description };
+              specs = {
+                Description: m.description
+              };
             }
+
             return {
               id: m.id,
-              numcCode: 'NUMC-401015-0089',
+              numcCode:
+                'NUMC-401015-0089',
               localCode: m.material_code,
               cpseId: m.cpse_id,
-              cpseName: m.cpse_name || m.cpse_id.toUpperCase(),
-              rawDescription: m.raw_description || m.description,
-              standardDescription: m.description,
+              cpseName:
+                m.cpse_name ||
+                m.cpse_id?.toUpperCase(),
+              rawDescription:
+                m.raw_description ||
+                m.description,
+              standardDescription:
+                m.description,
               unspscCode: '40141600',
               unspscCategory: m.category,
-              mescCode: '60.12.34.110.1',
+              mescCode:
+                '60.12.34.110.1',
               stockQty: m.stock_qty || 10,
               unit: m.unit,
               unitCost: m.unit_cost || 0,
-              manufacturer: m.manufacturer || 'Approved OEM Vendor',
-              plantLocation: m.plant_location || 'Central CPSE Complex',
+              manufacturer:
+                m.manufacturer ||
+                'Approved OEM Vendor',
+              plantLocation:
+                m.plant_location ||
+                'Central CPSE Complex',
               status: 'Harmonized',
               confidenceScore: 98.4,
-              lastUpdated: '2026-09-20',
+              lastUpdated:
+                '2026-09-20',
               specifications: specs
             };
           });
+
           setMaterials(mapped);
         } else {
           setMaterials([]);
@@ -107,742 +434,3220 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
       })
       .catch((err) => {
         setMaterials([]);
-        setLoadError(err.message || 'Failed to load materials');
+        setLoadError(
+          err.message ||
+            'Failed to load materials'
+        );
       })
       .finally(() => {
         setIsLoading(false);
       });
-  }, [selectedCpse, searchTerm, selectedCategory, selectedStatus, retryKey]);
+  }, [
+    selectedCpse,
+    searchTerm,
+    selectedCategory,
+    selectedStatus,
+    retryKey
+  ]);
+
+  /* =========================================================
+     FILTER
+  ========================================================== */
 
   const filteredMaterials = useMemo(() => {
     return materials.filter((mat) => {
-      if (inStockOnly && mat.stockQty <= 0) return false;
+      if (
+        inStockOnly &&
+        mat.stockQty <= 0
+      ) {
+        return false;
+      }
+
       return true;
     });
   }, [materials, inStockOnly]);
 
+  /* =========================================================
+     HANDLERS
+  ========================================================== */
+
   const handleSimulateSearch = () => {
     setIsLoading(true);
+
     setTimeout(() => {
       setIsLoading(false);
-      showToast('AI Semantic Material Search Updated', 'info');
+
+      showToast(
+        'AI Semantic Material Search Updated',
+        'info'
+      );
     }, 300);
   };
 
   const handleMatchMaterial = (mat) => {
     if (!mat.id) {
-      showToast('AI Match is available for live catalog items only (sample data has no backend record)', 'warning');
+      showToast(
+        'AI Match is available for live catalog items only (sample data has no backend record)',
+        'warning'
+      );
       return;
     }
+
     setMatchingMaterial(mat);
     setMatchResult(null);
     setMatchError(null);
+    setReviewComment('');
+    setReviewError(null);
     setIsMatchLoading(true);
     setIsMatchOpen(true);
+
     matchMaterial(mat.id)
-      .then((data) => setMatchResult(data))
-      .catch((err) => setMatchError(err.message || 'AI material matching failed'))
-      .finally(() => setIsMatchLoading(false));
+      .then((data) => {
+        setMatchResult(data);
+      })
+      .catch((err) => {
+        setMatchError(
+          err.message ||
+            'AI material matching failed'
+        );
+      })
+      .finally(() => {
+        setIsMatchLoading(false);
+      });
   };
 
   const handleRetryMatch = () => {
     if (!matchingMaterial?.id) return;
+
     setMatchResult(null);
     setMatchError(null);
     setIsMatchLoading(true);
+
     matchMaterial(matchingMaterial.id)
-      .then((data) => setMatchResult(data))
-      .catch((err) => setMatchError(err.message || 'AI material matching failed'))
-      .finally(() => setIsMatchLoading(false));
+      .then((data) => {
+        setMatchResult(data);
+      })
+      .catch((err) => {
+        setMatchError(
+          err.message ||
+            'AI material matching failed'
+        );
+      })
+      .finally(() => {
+        setIsMatchLoading(false);
+      });
   };
 
-  const handleReviewAction = (materialId, mappingId, decision) => {
-    if (!matchingMaterial?.id || !mappingId || isReviewSubmitting) return;
+  const handleReviewAction = (
+    materialId,
+    mappingId,
+    decision
+  ) => {
+    if (
+      !matchingMaterial?.id ||
+      !mappingId ||
+      isReviewSubmitting
+    ) {
+      return;
+    }
+
     setIsReviewSubmitting(true);
     setReviewError(null);
+
     submitApproval(
       mappingId,
       decision,
-      reviewComment.trim() || (decision === 'Approved' ? 'Approved via Material Matching review' : 'Rejected via Material Matching review'),
+      reviewComment.trim() ||
+        (decision === 'Approved'
+          ? 'Approved via Material Matching review'
+          : 'Rejected via Material Matching review'),
       'Master Data Admin'
     )
       .then(() => {
-        const newStatus = decision === 'Approved' ? 'Confirmed' : 'Under Review';
-        setMatchResult((prev) => (prev ? { ...prev, match_status: newStatus } : prev));
+        const newStatus =
+          decision === 'Approved'
+            ? 'Confirmed'
+            : 'Under Review';
+
+        setMatchResult((prev) =>
+          prev
+            ? {
+                ...prev,
+                match_status: newStatus
+              }
+            : prev
+        );
+
         setReviewComment('');
+
         if (decision === 'Approved') {
-          showToast(`Approved match for ${matchingMaterial.localCode}. Mapping confirmed & audit logged.`, 'success');
+          showToast(
+            `Approved match for ${matchingMaterial.localCode}. Mapping confirmed & audit logged.`,
+            'success'
+          );
         } else {
-          showToast(`Rejected match for ${matchingMaterial.localCode}. Feedback recorded & audit logged.`, 'warning');
+          showToast(
+            `Rejected match for ${matchingMaterial.localCode}. Feedback recorded & audit logged.`,
+            'warning'
+          );
         }
       })
       .catch((err) => {
-        setReviewError(err.message || 'Review action failed');
-        showToast(err.message || 'Review action failed', 'danger');
+        setReviewError(
+          err.message ||
+            'Review action failed'
+        );
+
+        showToast(
+          err.message ||
+            'Review action failed',
+          'danger'
+        );
       })
-      .finally(() => setIsReviewSubmitting(false));
+      .finally(() => {
+        setIsReviewSubmitting(false);
+      });
   };
 
   const toggleAddToComparison = (item) => {
-    const exists = comparisonItems.some((i) => i.localCode === item.localCode);
+    const exists = comparisonItems.some(
+      (i) =>
+        i.localCode === item.localCode
+    );
+
     if (exists) {
-      setComparisonItems(comparisonItems.filter((i) => i.localCode !== item.localCode));
-      showToast(`Removed from comparison`, 'info');
+      setComparisonItems(
+        comparisonItems.filter(
+          (i) =>
+            i.localCode !== item.localCode
+        )
+      );
+
+      showToast(
+        'Removed from comparison',
+        'info'
+      );
     } else {
       if (comparisonItems.length >= 4) {
-        showToast('Maximum 4 items allowed in comparison matrix', 'warning');
+        showToast(
+          'Maximum 4 items allowed in comparison matrix',
+          'warning'
+        );
         return;
       }
-      setComparisonItems([...comparisonItems, item]);
-      showToast(`Added ${item.localCode} to comparison selection`, 'success');
+
+      setComparisonItems([
+        ...comparisonItems,
+        item
+      ]);
+
+      showToast(
+        `Added ${item.localCode} to comparison selection`,
+        'success'
+      );
     }
   };
 
-  const isSelectedForComparison = (item) => {
-    return comparisonItems.some((i) => i.localCode === item.localCode);
+  const isSelectedForComparison = (
+    item
+  ) => {
+    return comparisonItems.some(
+      (i) =>
+        i.localCode === item.localCode
+    );
   };
 
+  const resetFilters = () => {
+    setSearchTerm('');
+    setSelectedCategory('ALL');
+    setSelectedStatus('ALL');
+    setSelectedCpse('all');
+    setInStockOnly(false);
+  };
+
+  /* =========================================================
+     RENDER
+  ========================================================== */
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Page Header Toolbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '14px',
+        paddingBottom: '28px'
+      }}
+    >
+      {/* =====================================================
+          PAGE HEADER
+      ====================================================== */}
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '14px',
+          flexWrap: 'wrap'
+        }}
+      >
         <div>
-          <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>Material Search & Semantic AI Matching</h2>
-          <p style={{ fontSize: '12px', color: '#64748B' }}>
-            Unified catalog lookup across National Material Master (NUMC) and CPSE local code registers.
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              marginBottom: '5px'
+            }}
+          >
+            <span
+              style={{
+                color: '#8A938E',
+                fontSize: '9px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.7px'
+              }}
+            >
+              MATERIAL INTELLIGENCE
+            </span>
+
+            <Badge variant="ai">
+              <Sparkles size={10} />
+              AI Enabled
+            </Badge>
+          </div>
+
+          <h2
+            style={{
+              margin: 0,
+              color: '#1D2923',
+              fontSize: '20px',
+              fontWeight: 800,
+              letterSpacing: '-0.5px'
+            }}
+          >
+            Material Search & Matching
+          </h2>
+
+          <p
+            style={{
+              margin: '5px 0 0',
+              color: '#7E8982',
+              fontSize: '10px'
+            }}
+          >
+            Unified catalogue lookup across
+            the National Material Master and
+            CPSE local registers.
           </p>
         </div>
 
         {comparisonItems.length > 0 && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            backgroundColor: '#EFF6FF',
-            border: '1px solid #BFDBFE',
-            padding: '6px 14px',
-            borderRadius: '8px'
-          }}>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#1D4ED8' }}>
-              {comparisonItems.length} Material(s) Selected for Comparison
-            </span>
-            <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('comparison')}>
-              Compare Selected Matrix <GitCompare size={13} />
-            </button>
-            <button
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
-              onClick={() => setComparisonItems([])}
-              title="Clear comparison selection"
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 10px',
+              borderRadius: '12px',
+              background: '#EAF7F1',
+              border: '1px solid #CDEBDD'
+            }}
+          >
+            <GitCompare
+              size={14}
+              color="#078A58"
+            />
+
+            <span
+              style={{
+                color: '#087A50',
+                fontSize: '9px',
+                fontWeight: 750
+              }}
             >
-              <X size={14} />
+              {comparisonItems.length}{' '}
+              selected
+            </span>
+
+            <ActionButton
+              variant="primary"
+              icon={GitCompare}
+              onClick={() =>
+                setActiveTab('comparison')
+              }
+            >
+              Compare
+            </ActionButton>
+
+            <button
+              onClick={() =>
+                setComparisonItems([])
+              }
+              title="Clear comparison selection"
+              style={{
+                width: '27px',
+                height: '27px',
+                border: 'none',
+                borderRadius: '7px',
+                background:
+                  'rgba(255,255,255,0.7)',
+                color: '#64716A',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={13} />
             </button>
           </div>
         )}
       </div>
 
-      {/* Advanced Filter Box */}
-      <div className="card" style={{ padding: '16px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {/* Top Search Input */}
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <div style={{ flex: 1, position: 'relative' }}>
-              <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: '#94A3B8' }} />
-              <input
-                type="text"
-                className="form-control"
-                style={{ paddingLeft: '38px', height: '38px', fontSize: '13px' }}
-                placeholder="Search by keywords, NUMC code (NUMC-401015...), CPSE code, or specs e.g. 'Gate Valve 2 inch 150#'"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <button className="btn btn-primary" onClick={handleSimulateSearch}>
-              <Search size={15} /> Search Material
-            </button>
+      {/* =====================================================
+          SEARCH PANEL
+      ====================================================== */}
+
+      <section
+        style={{
+          background: '#FFFFFF',
+          border: '1px solid #E7EBE8',
+          borderRadius: '18px',
+          padding: '16px',
+          boxShadow:
+            '0 3px 14px rgba(15, 23, 42, 0.035)'
+        }}
+      >
+        <SectionTitle
+          icon={Search}
+          title="Search Catalogue"
+          subtitle="Search by material code, description, CPSE or technical specifications."
+          tone="green"
+          right={
+            <Badge variant="success">
+              Semantic Search Active
+            </Badge>
+          }
+        />
+
+        {/* Search */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '8px'
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              position: 'relative'
+            }}
+          >
+            <Search
+              size={15}
+              style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform:
+                  'translateY(-50%)',
+                color: '#9AA49E'
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder="Search keywords, NUMC code, CPSE code or technical specifications..."
+              value={searchTerm}
+              onChange={(e) =>
+                setSearchTerm(e.target.value)
+              }
+              style={{
+                width: '100%',
+                height: '40px',
+                boxSizing: 'border-box',
+                padding:
+                  '0 12px 0 36px',
+                borderRadius: '10px',
+                border:
+                  '1px solid #DDE5E0',
+                background: '#FAFBFA',
+                color: '#26332C',
+                outline: 'none',
+                fontSize: '10px'
+              }}
+            />
           </div>
 
-          {/* Filters Row */}
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* CPSE Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>CPSE:</span>
-              <select
-                className="form-control"
-                style={{ width: '180px', padding: '5px 8px', fontSize: '12px' }}
-                value={selectedCpse}
-                onChange={(e) => setSelectedCpse(e.target.value)}
-              >
-                {CPSE_LIST.map((c) => (
-                  <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
-                ))}
-              </select>
-            </div>
+          <ActionButton
+            variant="primary"
+            icon={Search}
+            onClick={handleSimulateSearch}
+          >
+            Search Material
+          </ActionButton>
+        </div>
 
-            {/* Category Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Category:</span>
-              <select
-                className="form-control"
-                style={{ width: '180px', padding: '5px 8px', fontSize: '12px' }}
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-              >
-                <option value="ALL">All UNSPSC Categories</option>
-                <option value="Valves">Valves</option>
-                <option value="Motors">Motors</option>
-                <option value="Bearings">Bearings</option>
-                <option value="Pumps & Impellers">Pumps & Impellers</option>
-                <option value="Electrical Cables">Electrical Cables</option>
-              </select>
-            </div>
+        {/* Filters */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '9px',
+            flexWrap: 'wrap',
+            marginTop: '12px',
+            paddingTop: '12px',
+            borderTop:
+              '1px solid #EFF2F0'
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px'
+            }}
+          >
+            <Building2
+              size={12}
+              color="#8A938E"
+            />
 
-            {/* Status Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>Status:</span>
-              <select
-                className="form-control"
-                style={{ width: '150px', padding: '5px 8px', fontSize: '12px' }}
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="Harmonized">Harmonized</option>
-                <option value="Duplicate Cluster">Duplicate Cluster</option>
-                <option value="Under AI Review">Under AI Review</option>
-              </select>
-            </div>
-
-            {/* AI Semantic Search Toggle */}
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: '#4338CA' }}>
-              <input
-                type="checkbox"
-                checked={isAiSemantic}
-                onChange={(e) => setIsAiSemantic(e.target.checked)}
-              />
-              <Sparkles size={14} /> AI Semantic Fuzzy Matching
-            </label>
-
-            {/* Stock Availability Toggle */}
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: '#475569' }}>
-              <input
-                type="checkbox"
-                checked={inStockOnly}
-                onChange={(e) => setInStockOnly(e.target.checked)}
-              />
-              Available Stock Only
-            </label>
+            <select
+              value={selectedCpse}
+              onChange={(e) =>
+                setSelectedCpse(
+                  e.target.value
+                )
+              }
+              style={{
+                height: '31px',
+                minWidth: '165px',
+                padding: '0 8px',
+                borderRadius: '8px',
+                border:
+                  '1px solid #E0E7E2',
+                background: '#FFFFFF',
+                color: '#56635B',
+                fontSize: '9px',
+                outline: 'none'
+              }}
+            >
+              {CPSE_LIST.map((c) => (
+                <option
+                  key={c.id}
+                  value={c.id}
+                >
+                  {c.code} - {c.name}
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
-      </div>
 
-      {/* Results Header Info */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: '13px', color: '#475569', fontWeight: 500 }}>
-          Showing <strong>{filteredMaterials.length}</strong> material records found
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px'
+            }}
+          >
+            <Layers
+              size={12}
+              color="#8A938E"
+            />
+
+            <select
+              value={selectedCategory}
+              onChange={(e) =>
+                setSelectedCategory(
+                  e.target.value
+                )
+              }
+              style={{
+                height: '31px',
+                minWidth: '155px',
+                padding: '0 8px',
+                borderRadius: '8px',
+                border:
+                  '1px solid #E0E7E2',
+                background: '#FFFFFF',
+                color: '#56635B',
+                fontSize: '9px',
+                outline: 'none'
+              }}
+            >
+              <option value="ALL">
+                All UNSPSC Categories
+              </option>
+              <option value="Valves">
+                Valves
+              </option>
+              <option value="Motors">
+                Motors
+              </option>
+              <option value="Bearings">
+                Bearings
+              </option>
+              <option value="Pumps & Impellers">
+                Pumps & Impellers
+              </option>
+              <option value="Electrical Cables">
+                Electrical Cables
+              </option>
+            </select>
+          </div>
+
+          <select
+            value={selectedStatus}
+            onChange={(e) =>
+              setSelectedStatus(
+                e.target.value
+              )
+            }
+            style={{
+              height: '31px',
+              minWidth: '130px',
+              padding: '0 8px',
+              borderRadius: '8px',
+              border:
+                '1px solid #E0E7E2',
+              background: '#FFFFFF',
+              color: '#56635B',
+              fontSize: '9px',
+              outline: 'none'
+            }}
+          >
+            <option value="ALL">
+              All Statuses
+            </option>
+            <option value="Harmonized">
+              Harmonized
+            </option>
+            <option value="Duplicate Cluster">
+              Duplicate Cluster
+            </option>
+            <option value="Under AI Review">
+              Under AI Review
+            </option>
+          </select>
+
+          <label
+            style={{
+              height: '31px',
+              padding: '0 9px',
+              borderRadius: '8px',
+              border:
+                '1px solid #DDD4F8',
+              background: '#F8F5FF',
+              color: '#7048C8',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '9px',
+              fontWeight: 700
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={isAiSemantic}
+              onChange={(e) =>
+                setIsAiSemantic(
+                  e.target.checked
+                )
+              }
+              style={{
+                accentColor: '#7048C8'
+              }}
+            />
+            <Sparkles size={12} />
+            AI Semantic Matching
+          </label>
+
+          <label
+            style={{
+              height: '31px',
+              padding: '0 9px',
+              borderRadius: '8px',
+              border:
+                '1px solid #E0E7E2',
+              background: '#FFFFFF',
+              color: '#64716A',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '9px',
+              fontWeight: 700
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={inStockOnly}
+              onChange={(e) =>
+                setInStockOnly(
+                  e.target.checked
+                )
+              }
+              style={{
+                accentColor: '#078A58'
+              }}
+            />
+            Available Stock Only
+          </label>
+
           <button
-            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setViewMode('table')}
+            onClick={resetFilters}
+            style={{
+              height: '31px',
+              marginLeft: 'auto',
+              padding: '0 9px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'transparent',
+              color: '#7C8780',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              cursor: 'pointer',
+              fontSize: '9px',
+              fontWeight: 700
+            }}
+          >
+            <RefreshCw size={11} />
+            Reset
+          </button>
+        </div>
+      </section>
+
+      {/* =====================================================
+          RESULTS TOOLBAR
+      ====================================================== */}
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          flexWrap: 'wrap'
+        }}
+      >
+        <div>
+          <span
+            style={{
+              color: '#34413A',
+              fontSize: '10px',
+              fontWeight: 800
+            }}
+          >
+            {filteredMaterials.length}
+          </span>
+
+          <span
+            style={{
+              color: '#8A938E',
+              fontSize: '9px',
+              marginLeft: '4px'
+            }}
+          >
+            material records found
+          </span>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '3px',
+            borderRadius: '9px',
+            background: '#EEF2EF'
+          }}
+        >
+          <button
+            onClick={() =>
+              setViewMode('table')
+            }
+            style={{
+              height: '27px',
+              padding: '0 9px',
+              borderRadius: '7px',
+              border: 'none',
+              background:
+                viewMode === 'table'
+                  ? '#FFFFFF'
+                  : 'transparent',
+              color:
+                viewMode === 'table'
+                  ? '#078A58'
+                  : '#7B867F',
+              boxShadow:
+                viewMode === 'table'
+                  ? '0 2px 5px rgba(0,0,0,0.06)'
+                  : 'none',
+              fontSize: '8px',
+              fontWeight: 750,
+              cursor: 'pointer'
+            }}
           >
             Table View
           </button>
+
           <button
-            className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setViewMode('grid')}
+            onClick={() =>
+              setViewMode('grid')
+            }
+            style={{
+              height: '27px',
+              padding: '0 9px',
+              borderRadius: '7px',
+              border: 'none',
+              background:
+                viewMode === 'grid'
+                  ? '#FFFFFF'
+                  : 'transparent',
+              color:
+                viewMode === 'grid'
+                  ? '#078A58'
+                  : '#7B867F',
+              boxShadow:
+                viewMode === 'grid'
+                  ? '0 2px 5px rgba(0,0,0,0.06)'
+                  : 'none',
+              fontSize: '8px',
+              fontWeight: 750,
+              cursor: 'pointer'
+            }}
           >
             Grid Cards
           </button>
         </div>
       </div>
 
-      {/* Main Results Data Container */}
+      {/* =====================================================
+          LOADING
+      ====================================================== */}
+
       {isLoading ? (
-        <div className="card empty-state">
-          <div className="loading-spinner" style={{ margin: '0 auto 16px' }} />
-          <div style={{ fontWeight: 600, color: '#0F172A' }}>Running AI Vector Search Across 2.4 Million Items...</div>
-          <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>Normalizing technical specs & indexing CPSE databases</div>
-        </div>
-      ) : loadError ? (
-        <div className="card empty-state">
-          <AlertCircle className="empty-state-icon" />
-          <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>Failed to Load Materials</div>
-          <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
-            {loadError}. Ensure the backend AI service is running at http://localhost:8000.
-          </div>
-          <button className="btn btn-primary btn-sm" style={{ marginTop: '14px' }} onClick={() => setRetryKey((k) => k + 1)}>
-            Retry
-          </button>
-        </div>
-      ) : filteredMaterials.length === 0 ? (
-        <div className="card empty-state">
-          <AlertCircle className="empty-state-icon" />
-          <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>No Matching Materials Found</div>
-          <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
-            Try broadening search terms or clearing CPSE / Category filters.
-          </div>
-          <button
-            className="btn btn-secondary btn-sm"
-            style={{ marginTop: '14px' }}
-            onClick={() => {
-              setSearchTerm('');
-              setSelectedCategory('ALL');
-              setSelectedStatus('ALL');
-              setSelectedCpse('all');
+        <div
+          style={{
+            minHeight: '260px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#FFFFFF',
+            border:
+              '1px solid #E7EBE8',
+            borderRadius: '18px',
+            boxShadow:
+              '0 3px 14px rgba(15,23,42,0.035)'
+          }}
+        >
+          <div
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '50%',
+              border:
+                '3px solid #DDEDE5',
+              borderTopColor:
+                '#078A58',
+              animation:
+                'materialSearchSpin 0.8s linear infinite'
+            }}
+          />
+
+          <div
+            style={{
+              marginTop: '14px',
+              color: '#34413A',
+              fontSize: '11px',
+              fontWeight: 750
             }}
           >
-            Reset Filters
-          </button>
+            Running AI Vector Search...
+          </div>
+
+          <div
+            style={{
+              marginTop: '5px',
+              color: '#929C96',
+              fontSize: '9px'
+            }}
+          >
+            Normalizing technical specifications
+            and indexing CPSE catalogues
+          </div>
+        </div>
+      ) : loadError ? (
+        /* ===================================================
+           ERROR
+        ==================================================== */
+        <div
+          style={{
+            minHeight: '230px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#FFFFFF',
+            border:
+              '1px solid #E7EBE8',
+            borderRadius: '18px'
+          }}
+        >
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: '#FFF0F0',
+              color: '#C53D3D',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <AlertCircle size={20} />
+          </div>
+
+          <div
+            style={{
+              marginTop: '10px',
+              color: '#35423B',
+              fontSize: '11px',
+              fontWeight: 750
+            }}
+          >
+            Failed to Load Materials
+          </div>
+
+          <div
+            style={{
+              marginTop: '4px',
+              color: '#89938D',
+              fontSize: '9px',
+              maxWidth: '500px',
+              textAlign: 'center'
+            }}
+          >
+            {loadError}
+          </div>
+
+          <div style={{ marginTop: '13px' }}>
+            <ActionButton
+              variant="primary"
+              icon={RefreshCw}
+              onClick={() =>
+                setRetryKey((k) => k + 1)
+              }
+            >
+              Retry
+            </ActionButton>
+          </div>
+        </div>
+      ) : filteredMaterials.length === 0 ? (
+        /* ===================================================
+           EMPTY
+        ==================================================== */
+        <div
+          style={{
+            minHeight: '230px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: '#FFFFFF',
+            border:
+              '1px solid #E7EBE8',
+            borderRadius: '18px'
+          }}
+        >
+          <div
+            style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '12px',
+              background: '#F2F5F3',
+              color: '#7B867F',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Package size={20} />
+          </div>
+
+          <div
+            style={{
+              marginTop: '10px',
+              color: '#35423B',
+              fontSize: '11px',
+              fontWeight: 750
+            }}
+          >
+            No Matching Materials Found
+          </div>
+
+          <div
+            style={{
+              marginTop: '4px',
+              color: '#89938D',
+              fontSize: '9px'
+            }}
+          >
+            Try broadening your search or clearing
+            filters.
+          </div>
+
+          <div style={{ marginTop: '13px' }}>
+            <ActionButton
+              onClick={resetFilters}
+              icon={RefreshCw}
+            >
+              Reset Filters
+            </ActionButton>
+          </div>
         </div>
       ) : viewMode === 'table' ? (
-        <div className="table-container">
-          <table className="enterprise-table">
-            <thead>
-              <tr>
-                <th style={{ width: '40px' }}>Select</th>
-                <th>NUMC Master / Local Code</th>
-                <th>CPSE & Location</th>
-                <th>Standardized Specification Description</th>
-                <th>Category / MESC</th>
-                <th>Stock & Unit Price</th>
-                <th>AI Match</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMaterials.map((mat, idx) => {
-                const checked = isSelectedForComparison(mat);
-                return (
-                  <tr key={idx} style={{ backgroundColor: checked ? '#F0F9FF' : 'transparent' }}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleAddToComparison(mat)}
-                      />
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 700, color: '#1D4ED8', fontSize: '12px' }}>{mat.numcCode}</div>
-                      <div className="code-tag" style={{ marginTop: '2px', display: 'inline-block' }}>{mat.localCode}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: '#0F172A' }}>{mat.cpseName}</div>
-                      <div style={{ fontSize: '11px', color: '#64748B' }}>{mat.plantLocation}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: '#0F172A', lineHeight: 1.3 }}>{mat.standardDescription}</div>
-                      <div style={{ fontSize: '11px', color: '#64748B', fontStyle: 'italic', marginTop: '2px' }}>
-                        Raw: "{mat.rawDescription}"
-                      </div>
-                    </td>
-                    <td>
-                      <Badge variant="neutral">{mat.unspscCategory}</Badge>
-                      <div style={{ fontSize: '10px', color: '#64748B', marginTop: '2px' }}>MESC: {mat.mescCode}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 700, color: '#0F172A' }}>{mat.stockQty} {mat.unit}</div>
-                      <div style={{ fontSize: '11px', color: '#16A34A', fontWeight: 600 }}>
-                        ₹{mat.unitCost.toLocaleString('en-IN')} / unit
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '12px', fontWeight: 700, color: mat.confidenceScore > 95 ? '#15803D' : '#D97706' }}>
-                        {mat.confidenceScore}%
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#64748B' }}>Match Confidence</div>
-                    </td>
-                    <td>
-                      <Badge variant={mat.status === 'Harmonized' ? 'success' : mat.status === 'Duplicate Cluster' ? 'danger' : 'warning'}>
-                        {mat.status}
-                      </Badge>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => setSelectedItemDetail(mat)}
-                          title="View Full Spec Sheet"
+        /* ===================================================
+           TABLE VIEW
+        ==================================================== */
+        <div
+          style={{
+            background: '#FFFFFF',
+            border:
+              '1px solid #E7EBE8',
+            borderRadius: '18px',
+            overflow: 'hidden',
+            boxShadow:
+              '0 3px 14px rgba(15,23,42,0.035)'
+          }}
+        >
+          <div
+            style={{
+              overflowX: 'auto'
+            }}
+          >
+            <table
+              style={{
+                width: '100%',
+                minWidth: '1050px',
+                borderCollapse:
+                  'collapse'
+              }}
+            >
+              <thead>
+                <tr>
+                  {[
+                    '',
+                    'Material',
+                    'CPSE & Location',
+                    'Standardized Description',
+                    'Classification',
+                    'Inventory',
+                    'AI Match',
+                    'Status',
+                    'Actions'
+                  ].map((heading, index) => (
+                    <th
+                      key={index}
+                      style={{
+                        padding:
+                          '10px 11px',
+                        background:
+                          '#F8FAF9',
+                        borderBottom:
+                          '1px solid #E9EEEB',
+                        textAlign: 'left',
+                        color:
+                          '#8A938E',
+                        fontSize: '8px',
+                        fontWeight: 800,
+                        textTransform:
+                          'uppercase',
+                        letterSpacing:
+                          '0.4px',
+                        whiteSpace:
+                          'nowrap'
+                      }}
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredMaterials.map(
+                  (mat, idx) => {
+                    const checked =
+                      isSelectedForComparison(
+                        mat
+                      );
+
+                    return (
+                      <tr
+                        key={
+                          mat.id || idx
+                        }
+                        style={{
+                          background:
+                            checked
+                              ? '#F2FAF6'
+                              : '#FFFFFF',
+                          transition:
+                            'background 0.15s ease'
+                        }}
+                      >
+                        {/* SELECT */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1',
+                            width: '35px'
+                          }}
                         >
-                          <Eye size={13} />
-                        </button>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => handleMatchMaterial(mat)}
-                          title="Run AI matching against National standard catalog"
+                          <input
+                            type="checkbox"
+                            checked={
+                              checked
+                            }
+                            onChange={() =>
+                              toggleAddToComparison(
+                                mat
+                              )
+                            }
+                            style={{
+                              accentColor:
+                                '#078A58',
+                              cursor:
+                                'pointer'
+                            }}
+                          />
+                        </td>
+
+                        {/* MATERIAL */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1'
+                          }}
                         >
-                          <Sparkles size={13} />
-                        </button>
-                        <button
-                          className={`btn btn-sm ${checked ? 'btn-primary' : 'btn-secondary'}`}
-                          onClick={() => toggleAddToComparison(mat)}
-                          title={checked ? 'Selected for comparison' : 'Add to compare'}
+                          <div
+                            style={{
+                              color:
+                                '#078A58',
+                              fontSize:
+                                '9px',
+                              fontWeight:
+                                800
+                            }}
+                          >
+                            {mat.numcCode}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                '4px',
+                              display:
+                                'inline-block',
+                              padding:
+                                '3px 6px',
+                              borderRadius:
+                                '5px',
+                              background:
+                                '#F1F4F2',
+                              color:
+                                '#68736C',
+                              fontSize:
+                                '8px',
+                              fontWeight:
+                                700
+                            }}
+                          >
+                            {mat.localCode}
+                          </div>
+                        </td>
+
+                        {/* CPSE */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1'
+                          }}
                         >
-                          <GitCompare size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          <div
+                            style={{
+                              display:
+                                'flex',
+                              alignItems:
+                                'center',
+                              gap: '5px',
+                              color:
+                                '#34413A',
+                              fontSize:
+                                '9px',
+                              fontWeight:
+                                750
+                            }}
+                          >
+                            <Building2
+                              size={11}
+                              color="#078A58"
+                            />
+                            {mat.cpseName}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                '4px',
+                              display:
+                                'flex',
+                              alignItems:
+                                'center',
+                              gap: '4px',
+                              color:
+                                '#909A94',
+                              fontSize:
+                                '8px'
+                            }}
+                          >
+                            <MapPin
+                              size={10}
+                            />
+                            {
+                              mat.plantLocation
+                            }
+                          </div>
+                        </td>
+
+                        {/* DESCRIPTION */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1',
+                            maxWidth:
+                              '245px'
+                          }}
+                        >
+                          <div
+                            style={{
+                              color:
+                                '#35423B',
+                              fontSize:
+                                '9px',
+                              fontWeight:
+                                700,
+                              lineHeight:
+                                1.4
+                            }}
+                          >
+                            {
+                              mat.standardDescription
+                            }
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                '4px',
+                              color:
+                                '#929B95',
+                              fontSize:
+                                '8px',
+                              fontStyle:
+                                'italic',
+                              whiteSpace:
+                                'nowrap',
+                              overflow:
+                                'hidden',
+                              textOverflow:
+                                'ellipsis'
+                            }}
+                          >
+                            Raw: "
+                            {
+                              mat.rawDescription
+                            }
+                            "
+                          </div>
+                        </td>
+
+                        {/* CLASSIFICATION */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1'
+                          }}
+                        >
+                          <Badge variant="neutral">
+                            {
+                              mat.unspscCategory
+                            }
+                          </Badge>
+
+                          <div
+                            style={{
+                              marginTop:
+                                '4px',
+                              color:
+                                '#929B95',
+                              fontSize:
+                                '8px'
+                            }}
+                          >
+                            MESC:{' '}
+                            {
+                              mat.mescCode
+                            }
+                          </div>
+                        </td>
+
+                        {/* INVENTORY */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1'
+                          }}
+                        >
+                          <div
+                            style={{
+                              display:
+                                'flex',
+                              alignItems:
+                                'center',
+                              gap: '4px',
+                              color:
+                                '#35423B',
+                              fontSize:
+                                '9px',
+                              fontWeight:
+                                750
+                            }}
+                          >
+                            <Boxes
+                              size={11}
+                              color="#078A58"
+                            />
+                            {mat.stockQty}{' '}
+                            {mat.unit}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                '4px',
+                              color:
+                                '#078A58',
+                              fontSize:
+                                '8px',
+                              fontWeight:
+                                700
+                            }}
+                          >
+                            ₹
+                            {mat.unitCost.toLocaleString(
+                              'en-IN'
+                            )}{' '}
+                            / unit
+                          </div>
+                        </td>
+
+                        {/* AI */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1'
+                          }}
+                        >
+                          <div
+                            style={{
+                              color:
+                                mat.confidenceScore >
+                                95
+                                  ? '#078A58'
+                                  : '#B77900',
+                              fontSize:
+                                '11px',
+                              fontWeight:
+                                800
+                            }}
+                          >
+                            {
+                              mat.confidenceScore
+                            }
+                            %
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop:
+                                '2px',
+                              color:
+                                '#929B95',
+                              fontSize:
+                                '8px'
+                            }}
+                          >
+                            Confidence
+                          </div>
+                        </td>
+
+                        {/* STATUS */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1'
+                          }}
+                        >
+                          <Badge
+                            variant={
+                              mat.status ===
+                              'Harmonized'
+                                ? 'success'
+                                : mat.status ===
+                                    'Duplicate Cluster'
+                                  ? 'danger'
+                                  : 'warning'
+                            }
+                          >
+                            {mat.status}
+                          </Badge>
+                        </td>
+
+                        {/* ACTIONS */}
+                        <td
+                          style={{
+                            padding:
+                              '11px',
+                            borderBottom:
+                              '1px solid #F0F2F1'
+                          }}
+                        >
+                          <div
+                            style={{
+                              display:
+                                'flex',
+                              gap: '5px'
+                            }}
+                          >
+                            <button
+                              onClick={() =>
+                                setSelectedItemDetail(
+                                  mat
+                                )
+                              }
+                              title="View material details"
+                              style={{
+                                width:
+                                  '28px',
+                                height:
+                                  '28px',
+                                border:
+                                  '1px solid #E1E7E3',
+                                borderRadius:
+                                  '7px',
+                                background:
+                                  '#FFFFFF',
+                                color:
+                                  '#68736C',
+                                display:
+                                  'flex',
+                                alignItems:
+                                  'center',
+                                justifyContent:
+                                  'center',
+                                cursor:
+                                  'pointer'
+                              }}
+                            >
+                              <Eye
+                                size={12}
+                              />
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                handleMatchMaterial(
+                                  mat
+                                )
+                              }
+                              title="Run AI matching"
+                              style={{
+                                width:
+                                  '28px',
+                                height:
+                                  '28px',
+                                border:
+                                  '1px solid #DDD4F8',
+                                borderRadius:
+                                  '7px',
+                                background:
+                                  '#F7F4FF',
+                                color:
+                                  '#7048C8',
+                                display:
+                                  'flex',
+                                alignItems:
+                                  'center',
+                                justifyContent:
+                                  'center',
+                                cursor:
+                                  'pointer'
+                              }}
+                            >
+                              <Sparkles
+                                size={12}
+                              />
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                toggleAddToComparison(
+                                  mat
+                                )
+                              }
+                              title={
+                                checked
+                                  ? 'Remove from comparison'
+                                  : 'Add to comparison'
+                              }
+                              style={{
+                                width:
+                                  '28px',
+                                height:
+                                  '28px',
+                                border:
+                                  '1px solid #CDEBDD',
+                                borderRadius:
+                                  '7px',
+                                background:
+                                  checked
+                                    ? '#078A58'
+                                    : '#EAF7F1',
+                                color:
+                                  checked
+                                    ? '#FFFFFF'
+                                    : '#078A58',
+                                display:
+                                  'flex',
+                                alignItems:
+                                  'center',
+                                justifyContent:
+                                  'center',
+                                cursor:
+                                  'pointer'
+                              }}
+                            >
+                              {checked ? (
+                                <Check
+                                  size={12}
+                                />
+                              ) : (
+                                <GitCompare
+                                  size={12}
+                                />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : (
-        /* Grid Card View */
-        <div className="grid-3">
-          {filteredMaterials.map((mat, idx) => {
-            const checked = isSelectedForComparison(mat);
-            return (
-              <div key={idx} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px', border: checked ? '2px solid #2563EB' : '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#1D4ED8' }}>{mat.numcCode}</span>
-                    <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>{mat.cpseName}</h3>
+        /* ===================================================
+           GRID VIEW
+        ==================================================== */
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns:
+              'repeat(3, minmax(0, 1fr))',
+            gap: '11px'
+          }}
+        >
+          {filteredMaterials.map(
+            (mat, idx) => {
+              const checked =
+                isSelectedForComparison(
+                  mat
+                );
+
+              return (
+                <div
+                  key={
+                    mat.id || idx
+                  }
+                  style={{
+                    background:
+                      '#FFFFFF',
+                    border: checked
+                      ? '1.5px solid #078A58'
+                      : '1px solid #E7EBE8',
+                    borderRadius:
+                      '16px',
+                    padding: '14px',
+                    display:
+                      'flex',
+                    flexDirection:
+                      'column',
+                    gap: '10px',
+                    boxShadow:
+                      '0 3px 14px rgba(15,23,42,0.035)'
+                  }}
+                >
+                  <div
+                    style={{
+                      display:
+                        'flex',
+                      justifyContent:
+                        'space-between',
+                      alignItems:
+                        'flex-start',
+                      gap: '8px'
+                    }}
+                  >
+                    <div
+                      style={{
+                        minWidth: 0
+                      }}
+                    >
+                      <div
+                        style={{
+                          color:
+                            '#078A58',
+                          fontSize:
+                            '9px',
+                          fontWeight:
+                            800
+                        }}
+                      >
+                        {
+                          mat.numcCode
+                        }
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop:
+                            '4px',
+                          color:
+                            '#35423B',
+                          fontSize:
+                            '10px',
+                          fontWeight:
+                            750
+                        }}
+                      >
+                        {
+                          mat.cpseName
+                        }
+                      </div>
+                    </div>
+
+                    <Badge
+                      variant={
+                        mat.status ===
+                        'Harmonized'
+                          ? 'success'
+                          : 'warning'
+                      }
+                    >
+                      {mat.status}
+                    </Badge>
                   </div>
-                  <Badge variant={mat.status === 'Harmonized' ? 'success' : 'danger'}>
-                    {mat.status}
-                  </Badge>
-                </div>
 
-                <div style={{ fontSize: '12px', color: '#0F172A', fontWeight: 500, flex: 1 }}>
-                  {mat.standardDescription}
-                </div>
+                  <div
+                    style={{
+                      color:
+                        '#35423B',
+                      fontSize:
+                        '10px',
+                      fontWeight:
+                        650,
+                      lineHeight:
+                        1.45,
+                      minHeight:
+                        '43px'
+                    }}
+                  >
+                    {
+                      mat.standardDescription
+                    }
+                  </div>
 
-                <div style={{ padding: '8px', backgroundColor: '#F8FAFC', borderRadius: '6px', fontSize: '11px', color: '#475569' }}>
-                  <div><strong>Manufacturer:</strong> {mat.manufacturer}</div>
-                  <div><strong>Available Stock:</strong> {mat.stockQty} {mat.unit} @ ₹{mat.unitCost.toLocaleString('en-IN')}</div>
-                </div>
+                  <div
+                    style={{
+                      display:
+                        'grid',
+                      gridTemplateColumns:
+                        '1fr 1fr',
+                      gap: '7px'
+                    }}
+                  >
+                    <InfoBox
+                      label="Stock"
+                      value={`${mat.stockQty} ${mat.unit}`}
+                      icon={Boxes}
+                      tone="green"
+                    />
 
-                <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                  <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => setSelectedItemDetail(mat)}>
-                    <Eye size={13} /> Details Sheet
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleMatchMaterial(mat)} title="Run AI matching">
-                    <Sparkles size={13} />
-                  </button>
-                  <button className={`btn btn-sm ${checked ? 'btn-primary' : 'btn-secondary'}`} onClick={() => toggleAddToComparison(mat)}>
-                    <GitCompare size={13} /> {checked ? 'Selected' : 'Compare'}
-                  </button>
+                    <InfoBox
+                      label="Unit Cost"
+                      value={`₹${mat.unitCost.toLocaleString('en-IN')}`}
+                      icon={IndianRupee}
+                      tone="blue"
+                    />
+                  </div>
+
+                  <div
+                    style={{
+                      padding:
+                        '9px',
+                      borderRadius:
+                        '9px',
+                      background:
+                        '#F8FAF9',
+                      color:
+                        '#7C8780',
+                      fontSize:
+                        '8px'
+                    }}
+                  >
+                    <strong
+                      style={{
+                        color:
+                          '#59655E'
+                      }}
+                    >
+                      Manufacturer:
+                    </strong>{' '}
+                    {
+                      mat.manufacturer
+                    }
+                  </div>
+
+                  <div
+                    style={{
+                      display:
+                        'flex',
+                      gap: '5px',
+                      marginTop:
+                        '2px'
+                    }}
+                  >
+                    <ActionButton
+                      fullWidth
+                      icon={Eye}
+                      onClick={() =>
+                        setSelectedItemDetail(
+                          mat
+                        )
+                      }
+                    >
+                      Details
+                    </ActionButton>
+
+                    <ActionButton
+                      icon={Sparkles}
+                      variant="purple"
+                      onClick={() =>
+                        handleMatchMaterial(
+                          mat
+                        )
+                      }
+                    >
+                      AI
+                    </ActionButton>
+
+                    <ActionButton
+                      icon={GitCompare}
+                      variant={
+                        checked
+                          ? 'primary'
+                          : 'secondary'
+                      }
+                      onClick={() =>
+                        toggleAddToComparison(
+                          mat
+                        )
+                      }
+                    >
+                      {checked
+                        ? 'Selected'
+                        : 'Compare'}
+                    </ActionButton>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            }
+          )}
         </div>
       )}
 
-      {/* Material Technical Datasheet Side Drawer */}
+      {/* =====================================================
+          MATERIAL DETAIL DRAWER
+      ====================================================== */}
+
       <Drawer
-        isOpen={Boolean(selectedItemDetail)}
-        onClose={() => setSelectedItemDetail(null)}
-        title={selectedItemDetail ? `Material Datasheet: ${selectedItemDetail.numcCode}` : ''}
+        isOpen={Boolean(
+          selectedItemDetail
+        )}
+        onClose={() =>
+          setSelectedItemDetail(null)
+        }
+        title={
+          selectedItemDetail
+            ? `Material Datasheet: ${selectedItemDetail.numcCode}`
+            : ''
+        }
         footer={
           selectedItemDetail && (
-            <>
-              <button className="btn btn-secondary" onClick={() => setSelectedItemDetail(null)}>Close</button>
-              <button className="btn btn-primary" onClick={() => {
-                toggleAddToComparison(selectedItemDetail);
-                setSelectedItemDetail(null);
-              }}>
-                Add to Comparison Matrix
-              </button>
-            </>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent:
+                  'flex-end',
+                gap: '8px'
+              }}
+            >
+              <ActionButton
+                onClick={() =>
+                  setSelectedItemDetail(
+                    null
+                  )
+                }
+              >
+                Close
+              </ActionButton>
+
+              <ActionButton
+                variant="primary"
+                icon={GitCompare}
+                onClick={() => {
+                  toggleAddToComparison(
+                    selectedItemDetail
+                  );
+                  setSelectedItemDetail(
+                    null
+                  );
+                }}
+              >
+                Add to Comparison
+              </ActionButton>
+            </div>
           )
         }
       >
         {selectedItemDetail && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ padding: '12px', backgroundColor: '#EFF6FF', borderRadius: '8px', border: '1px solid #BFDBFE' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#1D4ED8', textTransform: 'uppercase' }}>National Master Definition</div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', marginTop: '4px' }}>
-                {selectedItemDetail.standardDescription}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection:
+                'column',
+              gap: '14px'
+            }}
+          >
+            <div
+              style={{
+                padding: '14px',
+                borderRadius: '13px',
+                background:
+                  'linear-gradient(135deg,#F0FAF5,#F8FBF9)',
+                border:
+                  '1px solid #D7E9DF'
+              }}
+            >
+              <div
+                style={{
+                  display:
+                    'flex',
+                  alignItems:
+                    'center',
+                  gap: '6px',
+                  color:
+                    '#078A58',
+                  fontSize:
+                    '8px',
+                  fontWeight:
+                    800,
+                  textTransform:
+                    'uppercase'
+                }}
+              >
+                <ShieldCheck
+                  size={12}
+                />
+                National Master Definition
+              </div>
+
+              <div
+                style={{
+                  marginTop:
+                    '7px',
+                  color:
+                    '#26332C',
+                  fontSize:
+                    '13px',
+                  lineHeight:
+                    1.4,
+                  fontWeight:
+                    800
+                }}
+              >
+                {
+                  selectedItemDetail.standardDescription
+                }
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div style={{ padding: '10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                <div style={{ fontSize: '11px', color: '#64748B' }}>CPSE Local Item Code</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{selectedItemDetail.localCode}</div>
-              </div>
+            <div
+              style={{
+                display:
+                  'grid',
+                gridTemplateColumns:
+                  '1fr 1fr',
+                gap: '8px'
+              }}
+            >
+              <InfoBox
+                label="CPSE Local Code"
+                value={
+                  selectedItemDetail.localCode
+                }
+                icon={FileText}
+              />
 
-              <div style={{ padding: '10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                <div style={{ fontSize: '11px', color: '#64748B' }}>UNSPSC Code</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{selectedItemDetail.unspscCode}</div>
-              </div>
+              <InfoBox
+                label="UNSPSC Code"
+                value={
+                  selectedItemDetail.unspscCode
+                }
+                icon={Layers}
+              />
 
-              <div style={{ padding: '10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                <div style={{ fontSize: '11px', color: '#64748B' }}>CPSE Enterprise</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>{selectedItemDetail.cpseName}</div>
-              </div>
+              <InfoBox
+                label="CPSE Enterprise"
+                value={
+                  selectedItemDetail.cpseName
+                }
+                icon={Building2}
+                tone="green"
+              />
 
-              <div style={{ padding: '10px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
-                <div style={{ fontSize: '11px', color: '#64748B' }}>Unit Procurement Cost</div>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#16A34A' }}>₹{selectedItemDetail.unitCost.toLocaleString('en-IN')}</div>
-              </div>
+              <InfoBox
+                label="Unit Cost"
+                value={`₹${selectedItemDetail.unitCost.toLocaleString('en-IN')}`}
+                icon={IndianRupee}
+                tone="green"
+              />
             </div>
 
-            {/* Technical Attributes Table */}
+            {/* Technical specifications */}
             <div>
-              <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', marginBottom: '8px' }}>
-                Standardized Technical Attributes Matrix
-              </h4>
-              <div className="table-container">
-                <table className="enterprise-table">
+              <SectionTitle
+                icon={SlidersHorizontal}
+                title="Technical Attributes"
+                subtitle="Standardized specification matrix"
+                tone="gray"
+              />
+
+              <div
+                style={{
+                  border:
+                    '1px solid #E7EBE8',
+                  borderRadius:
+                    '11px',
+                  overflow:
+                    'hidden'
+                }}
+              >
+                <table
+                  style={{
+                    width:
+                      '100%',
+                    borderCollapse:
+                      'collapse'
+                  }}
+                >
                   <thead>
                     <tr>
-                      <th>Attribute Name</th>
-                      <th>Spec Value</th>
+                      <th
+                        style={{
+                          padding:
+                            '9px',
+                          background:
+                            '#F8FAF9',
+                          textAlign:
+                            'left',
+                          color:
+                            '#8A938E',
+                          fontSize:
+                            '8px'
+                        }}
+                      >
+                        Attribute
+                      </th>
+
+                      <th
+                        style={{
+                          padding:
+                            '9px',
+                          background:
+                            '#F8FAF9',
+                          textAlign:
+                            'left',
+                          color:
+                            '#8A938E',
+                          fontSize:
+                            '8px'
+                        }}
+                      >
+                        Specification
+                      </th>
                     </tr>
                   </thead>
+
                   <tbody>
-                    {Object.entries(selectedItemDetail.specifications).map(([key, val]) => (
-                      <tr key={key}>
-                        <td style={{ fontWeight: 600, color: '#475569' }}>{key}</td>
-                        <td style={{ fontWeight: 700, color: '#0F172A' }}>{val}</td>
-                      </tr>
-                    ))}
+                    {Object.entries(
+                      selectedItemDetail.specifications ||
+                        {}
+                    ).map(
+                      ([key, val]) => (
+                        <tr
+                          key={key}
+                        >
+                          <td
+                            style={{
+                              padding:
+                                '9px',
+                              borderTop:
+                                '1px solid #EFF2F0',
+                              color:
+                                '#66736B',
+                              fontSize:
+                                '8px',
+                              fontWeight:
+                                700
+                            }}
+                          >
+                            {key}
+                          </td>
+
+                          <td
+                            style={{
+                              padding:
+                                '9px',
+                              borderTop:
+                                '1px solid #EFF2F0',
+                              color:
+                                '#35423B',
+                              fontSize:
+                                '9px',
+                              fontWeight:
+                                700
+                            }}
+                          >
+                            {String(
+                              val
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
 
-            {/* Plant Location & Stock */}
-            <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-              <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>Inventory Location</h4>
-              <div style={{ fontSize: '12px', color: '#475569' }}>
-                <strong>Plant:</strong> {selectedItemDetail.plantLocation}
-              </div>
-              <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
-                <strong>Current Physical Stock:</strong> {selectedItemDetail.stockQty} {selectedItemDetail.unit}
-              </div>
-              <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
-                <strong>Approved OEMs / Brands:</strong> {selectedItemDetail.manufacturer}
+            {/* Inventory */}
+            <div
+              style={{
+                padding: '13px',
+                borderRadius:
+                  '12px',
+                background:
+                  '#F8FAF9',
+                border:
+                  '1px solid #E7EBE8'
+              }}
+            >
+              <SectionTitle
+                icon={Boxes}
+                title="Inventory Location"
+                tone="green"
+              />
+
+              <div
+                style={{
+                  display:
+                    'flex',
+                  flexDirection:
+                    'column',
+                  gap: '7px'
+                }}
+              >
+                <div
+                  style={{
+                    color:
+                      '#66736B',
+                    fontSize:
+                      '9px'
+                  }}
+                >
+                  <strong
+                    style={{
+                      color:
+                        '#3F4C44'
+                    }}
+                  >
+                    Plant:
+                  </strong>{' '}
+                  {
+                    selectedItemDetail.plantLocation
+                  }
+                </div>
+
+                <div
+                  style={{
+                    color:
+                      '#66736B',
+                    fontSize:
+                      '9px'
+                  }}
+                >
+                  <strong
+                    style={{
+                      color:
+                        '#3F4C44'
+                    }}
+                  >
+                    Physical Stock:
+                  </strong>{' '}
+                  {
+                    selectedItemDetail.stockQty
+                  }{' '}
+                  {
+                    selectedItemDetail.unit
+                  }
+                </div>
+
+                <div
+                  style={{
+                    color:
+                      '#66736B',
+                    fontSize:
+                      '9px'
+                  }}
+                >
+                  <strong
+                    style={{
+                      color:
+                        '#3F4C44'
+                    }}
+                  >
+                    Approved OEM:
+                  </strong>{' '}
+                  {
+                    selectedItemDetail.manufacturer
+                  }
+                </div>
               </div>
             </div>
           </div>
         )}
       </Drawer>
 
-      {/* AI Material Match Results Drawer */}
+      {/* =====================================================
+          AI MATCH DRAWER
+      ====================================================== */}
+
       <Drawer
         isOpen={isMatchOpen}
-        onClose={() => setIsMatchOpen(false)}
-        title={`AI Match Result: ${matchingMaterial?.localCode || ''}`}
+        onClose={() =>
+          setIsMatchOpen(false)
+        }
+        title={`AI Match Result: ${
+          matchingMaterial?.localCode || ''
+        }`}
         footer={
-          <button className="btn btn-secondary" onClick={() => setIsMatchOpen(false)}>
+          <ActionButton
+            onClick={() =>
+              setIsMatchOpen(false)
+            }
+          >
             Close
-          </button>
+          </ActionButton>
         }
       >
         {isMatchLoading ? (
-          <div className="card empty-state">
-            <div className="loading-spinner" style={{ margin: '0 auto 16px' }} />
-            <div style={{ fontWeight: 600, color: '#0F172A' }}>Running AI Semantic Match...</div>
-            <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
-              Comparing specs against National Material Master catalog
+          <div
+            style={{
+              minHeight:
+                '300px',
+              display:
+                'flex',
+              flexDirection:
+                'column',
+              alignItems:
+                'center',
+              justifyContent:
+                'center'
+            }}
+          >
+            <div
+              style={{
+                width:
+                  '40px',
+                height:
+                  '40px',
+                borderRadius:
+                  '50%',
+                border:
+                  '3px solid #E0D9F7',
+                borderTopColor:
+                  '#7048C8',
+                animation:
+                  'materialSearchSpin 0.8s linear infinite'
+              }}
+            />
+
+            <div
+              style={{
+                marginTop:
+                  '13px',
+                color:
+                  '#35423B',
+                fontSize:
+                  '11px',
+                fontWeight:
+                  750
+              }}
+            >
+              Running AI Semantic Match...
+            </div>
+
+            <div
+              style={{
+                marginTop:
+                  '4px',
+                color:
+                  '#89938D',
+                fontSize:
+                  '9px'
+              }}
+            >
+              Comparing specifications against
+              the National Material Master
             </div>
           </div>
         ) : matchError ? (
-          <div className="card empty-state">
-            <AlertCircle className="empty-state-icon" />
-            <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F172A' }}>Match Failed</div>
-            <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
-              {matchError}. Ensure the backend AI service is running at http://localhost:8000.
+          <div
+            style={{
+              minHeight:
+                '260px',
+              display:
+                'flex',
+              flexDirection:
+                'column',
+              alignItems:
+                'center',
+              justifyContent:
+                'center',
+              textAlign:
+                'center'
+            }}
+          >
+            <div
+              style={{
+                width:
+                  '42px',
+                height:
+                  '42px',
+                borderRadius:
+                  '12px',
+                background:
+                  '#FFF0F0',
+                color:
+                  '#C53D3D',
+                display:
+                  'flex',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center'
+              }}
+            >
+              <AlertCircle
+                size={20}
+              />
             </div>
-            <button className="btn btn-secondary btn-sm" style={{ marginTop: '14px' }} onClick={handleRetryMatch}>
-              <RefreshCw size={13} /> Retry
-            </button>
+
+            <div
+              style={{
+                marginTop:
+                  '10px',
+                color:
+                  '#35423B',
+                fontSize:
+                  '11px',
+                fontWeight:
+                  750
+              }}
+            >
+              Match Failed
+            </div>
+
+            <div
+              style={{
+                marginTop:
+                  '5px',
+                maxWidth:
+                  '390px',
+                color:
+                  '#89938D',
+                fontSize:
+                  '9px',
+                lineHeight:
+                  1.5
+              }}
+            >
+              {matchError}
+            </div>
+
+            <div
+              style={{
+                marginTop:
+                  '14px'
+              }}
+            >
+              <ActionButton
+                icon={
+                  RefreshCw
+                }
+                onClick={
+                  handleRetryMatch
+                }
+              >
+                Retry
+              </ActionButton>
+            </div>
           </div>
         ) : matchResult ? (
           (() => {
-            const recommendation = classifyRecommendation(
-              matchResult.best_match?.similarity_score,
-              matchResult.best_match
-            );
+            const recommendation =
+              classifyRecommendation(
+                matchResult
+                  .best_match
+                  ?.similarity_score,
+                matchResult.best_match
+              );
+
             const recNotes = {
-              'Potential Equivalent Material': 'This material strongly matches the National standard below and is recommended for harmonization review.',
-              'Possible Near Duplicate': 'Close technical overlap detected. Verify specifications before considering unification with the National standard.',
-              'Different Material': 'No sufficiently similar National standard found. This item likely requires a new national classification.'
+              'Potential Equivalent Material':
+                'This material strongly matches the National standard below and is recommended for harmonization review.',
+              'Possible Near Duplicate':
+                'Close technical overlap detected. Verify specifications before considering unification with the National standard.',
+              'Different Material':
+                'No sufficiently similar National standard found. This item likely requires a new national classification.'
             };
-            const best = matchResult.best_match;
-            const matches = matchResult.all_matches || [];
+
+            const best =
+              matchResult.best_match;
+
+            const matches =
+              matchResult.all_matches ||
+              [];
+
             return (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Original Material */}
-                <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Original Material</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+              <div
+                style={{
+                  display:
+                    'flex',
+                  flexDirection:
+                    'column',
+                  gap: '13px'
+                }}
+              >
+                {/* Original material */}
+                <div
+                  style={{
+                    padding:
+                      '13px',
+                    borderRadius:
+                      '13px',
+                    background:
+                      '#F8FAF9',
+                    border:
+                      '1px solid #E7EBE8'
+                  }}
+                >
+                  <div
+                    style={{
+                      color:
+                        '#8A938E',
+                      fontSize:
+                        '8px',
+                      fontWeight:
+                        800,
+                      textTransform:
+                        'uppercase'
+                    }}
+                  >
+                    Original Material
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop:
+                        '8px',
+                      display:
+                        'flex',
+                      alignItems:
+                        'center',
+                      justifyContent:
+                        'space-between',
+                      gap: '8px'
+                    }}
+                  >
                     <div>
-                      <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '13px' }}>{matchingMaterial.cpseName}</div>
-                      <div className="code-tag" style={{ marginTop: '4px', display: 'inline-block' }}>
-                        {matchingMaterial.localCode} · CPSE {matchingMaterial.cpseId.toUpperCase()}
+                      <div
+                        style={{
+                          color:
+                            '#35423B',
+                          fontSize:
+                            '10px',
+                          fontWeight:
+                            800
+                        }}
+                      >
+                        {
+                          matchingMaterial.cpseName
+                        }
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop:
+                            '4px',
+                          display:
+                            'inline-block',
+                          padding:
+                            '4px 6px',
+                          borderRadius:
+                            '5px',
+                          background:
+                            '#EEF2EF',
+                          color:
+                            '#66736B',
+                          fontSize:
+                            '8px',
+                          fontWeight:
+                            700
+                        }}
+                      >
+                        {
+                          matchingMaterial.localCode
+                        }{' '}
+                        · CPSE{' '}
+                        {
+                          matchingMaterial.cpseId?.toUpperCase()
+                        }
                       </div>
                     </div>
-                    <Badge variant={MATCH_STATUS_VARIANTS[matchResult.match_status] || 'neutral'}>
-                      {matchResult.match_status || 'Unmapped'}
+
+                    <Badge
+                      variant={
+                        MATCH_STATUS_VARIANTS[
+                          matchResult
+                            .match_status
+                        ] ||
+                        'neutral'
+                      }
+                    >
+                      {matchResult.match_status ||
+                        'Unmapped'}
                     </Badge>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748B', fontStyle: 'italic', marginTop: '8px' }}>
-                    Raw: "{matchingMaterial.rawDescription}"
+
+                  <div
+                    style={{
+                      marginTop:
+                        '8px',
+                      color:
+                        '#929B95',
+                      fontSize:
+                        '8px',
+                      fontStyle:
+                        'italic'
+                    }}
+                  >
+                    Raw: "
+                    {
+                      matchingMaterial.rawDescription
+                    }
+                    "
                   </div>
-                  <div style={{ fontSize: '12px', color: '#0F172A', fontWeight: 500, marginTop: '4px' }}>
-                    {matchingMaterial.standardDescription}
+
+                  <div
+                    style={{
+                      marginTop:
+                        '5px',
+                      color:
+                        '#35423B',
+                      fontSize:
+                        '9px',
+                      lineHeight:
+                        1.45,
+                      fontWeight:
+                        650
+                    }}
+                  >
+                    {
+                      matchingMaterial.standardDescription
+                    }
                   </div>
                 </div>
 
-                {/* Recommendation Banner */}
-                <div style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${recommendation.variant === 'success' ? '#BBF7D0' : recommendation.variant === 'warning' ? '#FDE68A' : '#FECACA'}`, backgroundColor: recommendation.variant === 'success' ? '#F0FDF4' : recommendation.variant === 'warning' ? '#FFFBEB' : '#FFF7F7' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <Badge variant={recommendation.variant}>
-                      <Sparkles size={11} /> {recommendation.label}
+                {/* Recommendation */}
+                <div
+                  style={{
+                    padding:
+                      '13px',
+                    borderRadius:
+                      '13px',
+                    border:
+                      `1px solid ${
+                        recommendation.variant ===
+                        'success'
+                          ? '#CDEBDD'
+                          : recommendation.variant ===
+                              'warning'
+                            ? '#F0DDAA'
+                            : '#F0D1D1'
+                      }`,
+                    background:
+                      recommendation.variant ===
+                      'success'
+                        ? '#F2FBF6'
+                        : recommendation.variant ===
+                            'warning'
+                          ? '#FFFBF1'
+                          : '#FFF7F7'
+                  }}
+                >
+                  <div
+                    style={{
+                      display:
+                        'flex',
+                      alignItems:
+                        'center',
+                      gap: '8px',
+                      flexWrap:
+                        'wrap'
+                    }}
+                  >
+                    <Badge
+                      variant={
+                        recommendation.variant
+                      }
+                    >
+                      <Sparkles
+                        size={10}
+                      />
+                      {
+                        recommendation.label
+                      }
                     </Badge>
+
                     {best && (
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
-                        Best match: {best.national_code}
+                      <span
+                        style={{
+                          color:
+                            '#66736B',
+                          fontSize:
+                            '9px',
+                          fontWeight:
+                            700
+                        }}
+                      >
+                        Best match:{' '}
+                        {
+                          best.national_code
+                        }
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: '12px', color: '#334155', marginTop: '8px' }}>{recNotes[recommendation.label]}</div>
+
+                  <div
+                    style={{
+                      marginTop:
+                        '8px',
+                      color:
+                        '#56635B',
+                      fontSize:
+                        '9px',
+                      lineHeight:
+                        1.5
+                    }}
+                  >
+                    {
+                      recNotes[
+                        recommendation.label
+                      ]
+                    }
+                  </div>
                 </div>
 
-                {/* Best Match Similarity */}
+                {/* Similarity */}
                 {best ? (
-                  <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#1D4ED8' }}>AI Similarity Score</span>
-                      <span style={{ fontSize: '16px', fontWeight: 700, color: '#1D4ED8' }}>
-                        {best.similarity_score.toFixed(1)}%
-                      </span>
-                    </div>
-                    <div style={{ height: '8px', backgroundColor: '#DBEAFE', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      padding:
+                        '13px',
+                      borderRadius:
+                        '13px',
+                      background:
+                        '#F4F8FF',
+                      border:
+                        '1px solid #D9E5F7'
+                    }}
+                  >
+                    <div
+                      style={{
+                        display:
+                          'flex',
+                        alignItems:
+                          'center',
+                        justifyContent:
+                          'space-between'
+                      }}
+                    >
                       <div
                         style={{
-                          width: `${Math.min(100, Math.max(0, best.similarity_score))}%`,
-                          height: '100%',
-                          backgroundColor: best.similarity_score >= 75 ? '#16A34A' : best.similarity_score >= 50 ? '#D97706' : '#DC2626',
-                          borderRadius: '4px'
+                          display:
+                            'flex',
+                          alignItems:
+                            'center',
+                          gap: '6px',
+                          color:
+                            '#416FA8',
+                          fontSize:
+                            '9px',
+                          fontWeight:
+                            800
+                        }}
+                      >
+                        <Sparkles
+                          size={12}
+                        />
+                        AI Similarity Score
+                      </div>
+
+                      <span
+                        style={{
+                          color:
+                            '#416FA8',
+                          fontSize:
+                            '16px',
+                          fontWeight:
+                            850
+                        }}
+                      >
+                        {best.similarity_score.toFixed(
+                          1
+                        )}
+                        %
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        height:
+                          '8px',
+                        marginTop:
+                          '9px',
+                        borderRadius:
+                          '99px',
+                        background:
+                          '#DFEAF8',
+                        overflow:
+                          'hidden'
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              0,
+                              best.similarity_score
+                            )
+                          )}%`,
+                          height:
+                            '100%',
+                          borderRadius:
+                            '99px',
+                          background:
+                            best.similarity_score >=
+                            75
+                              ? '#078A58'
+                              : best.similarity_score >=
+                                  50
+                                ? '#D69A25'
+                                : '#C53D3D'
                         }}
                       />
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748B', marginTop: '6px' }}>
-                      Against {best.standard_description}
+
+                    <div
+                      style={{
+                        marginTop:
+                          '7px',
+                        color:
+                          '#89938D',
+                        fontSize:
+                          '8px'
+                      }}
+                    >
+                      Against{' '}
+                      {
+                        best.standard_description
+                      }
                     </div>
                   </div>
                 ) : (
-                  <div className="card empty-state" style={{ padding: '20px' }}>
-                    <AlertCircle size={22} className="empty-state-icon" />
-                    <div style={{ fontWeight: 600, fontSize: '14px', color: '#0F172A' }}>No Matching Standards Found</div>
-                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
-                      The AI found no National standard above the minimum similarity threshold.
+                  <div
+                    style={{
+                      padding:
+                        '20px',
+                      borderRadius:
+                        '12px',
+                      background:
+                        '#FFF7F7',
+                      border:
+                        '1px solid #F0D1D1',
+                      textAlign:
+                        'center'
+                    }}
+                  >
+                    <AlertCircle
+                      size={20}
+                      color="#C53D3D"
+                    />
+
+                    <div
+                      style={{
+                        marginTop:
+                          '7px',
+                        color:
+                          '#35423B',
+                        fontSize:
+                          '10px',
+                        fontWeight:
+                          750
+                      }}
+                    >
+                      No Matching Standards Found
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop:
+                          '4px',
+                        color:
+                          '#89938D',
+                        fontSize:
+                          '8px'
+                      }}
+                    >
+                      No National standard exceeded
+                      the similarity threshold.
                     </div>
                   </div>
                 )}
 
-                {/* Top Matching Materials */}
+                {/* Candidate matches */}
                 <div>
-                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', marginBottom: '10px' }}>
-                    Top Matching Materials ({matches.length})
-                  </h4>
-                  {matches.length > 0 ? (
-                    <div className="table-container">
-                      <table className="enterprise-table">
-                        <thead>
-                          <tr>
-                            <th>National Code</th>
-                            <th>Standardized Description</th>
-                            <th>Category</th>
-                            <th>Unit</th>
-                            <th>Match Type</th>
-                            <th>Similarity</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {matches.map((match, idx) => (
-                            <tr key={idx}>
-                              <td>
-                                <div style={{ fontWeight: 700, color: '#1D4ED8', fontSize: '12px' }}>{match.national_code}</div>
-                              </td>
-                              <td style={{ fontSize: '11px', maxWidth: '220px' }}>{match.standard_description}</td>
-                              <td><Badge variant="neutral">{match.category}</Badge></td>
-                              <td style={{ fontSize: '12px', fontWeight: 600 }}>{match.unit || 'NOS'}</td>
-                              <td>
-                                <Badge variant={match.is_category_match ? 'success' : 'warning'}>
-                                  {match.is_category_match ? 'Same Category' : 'Cross-Category'}
-                                </Badge>
-                              </td>
-                              <td>
-                                <Badge variant={match.similarity_score >= 75 ? 'success' : match.similarity_score >= 50 ? 'warning' : 'danger'}>
-                                  {match.similarity_score.toFixed(1)}%
-                                </Badge>
-                              </td>
+                  <SectionTitle
+                    icon={Database}
+                    title={`Top Matching Materials (${matches.length})`}
+                    subtitle="Ranked National Material Master candidates"
+                    tone="blue"
+                  />
+
+                  {matches.length >
+                  0 ? (
+                    <div
+                      style={{
+                        border:
+                          '1px solid #E7EBE8',
+                        borderRadius:
+                          '11px',
+                        overflow:
+                          'hidden'
+                      }}
+                    >
+                      <div
+                        style={{
+                          overflowX:
+                            'auto'
+                        }}
+                      >
+                        <table
+                          style={{
+                            width:
+                              '100%',
+                            minWidth:
+                              '620px',
+                            borderCollapse:
+                              'collapse'
+                          }}
+                        >
+                          <thead>
+                            <tr>
+                              {[
+                                'National Code',
+                                'Description',
+                                'Category',
+                                'Unit',
+                                'Similarity'
+                              ].map(
+                                (
+                                  heading
+                                ) => (
+                                  <th
+                                    key={
+                                      heading
+                                    }
+                                    style={{
+                                      padding:
+                                        '9px',
+                                      background:
+                                        '#F8FAF9',
+                                      color:
+                                        '#8A938E',
+                                      textAlign:
+                                        'left',
+                                      fontSize:
+                                        '8px',
+                                      fontWeight:
+                                        800
+                                    }}
+                                  >
+                                    {
+                                      heading
+                                    }
+                                  </th>
+                                )
+                              )}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+
+                          <tbody>
+                            {matches.map(
+                              (
+                                match,
+                                idx
+                              ) => (
+                                <tr
+                                  key={
+                                    idx
+                                  }
+                                >
+                                  <td
+                                    style={{
+                                      padding:
+                                        '9px',
+                                      borderTop:
+                                        '1px solid #EFF2F0',
+                                      color:
+                                        '#078A58',
+                                      fontSize:
+                                        '8px',
+                                      fontWeight:
+                                        800
+                                    }}
+                                  >
+                                    {
+                                      match.national_code
+                                    }
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        '9px',
+                                      borderTop:
+                                        '1px solid #EFF2F0',
+                                      color:
+                                        '#56635B',
+                                      fontSize:
+                                        '8px',
+                                      maxWidth:
+                                        '200px'
+                                    }}
+                                  >
+                                    {
+                                      match.standard_description
+                                    }
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        '9px',
+                                      borderTop:
+                                        '1px solid #EFF2F0'
+                                    }}
+                                  >
+                                    <Badge variant="neutral">
+                                      {
+                                        match.category
+                                      }
+                                    </Badge>
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        '9px',
+                                      borderTop:
+                                        '1px solid #EFF2F0',
+                                      color:
+                                        '#56635B',
+                                      fontSize:
+                                        '8px',
+                                      fontWeight:
+                                        700
+                                    }}
+                                  >
+                                    {
+                                      match.unit ||
+                                      'NOS'
+                                    }
+                                  </td>
+
+                                  <td
+                                    style={{
+                                      padding:
+                                        '9px',
+                                      borderTop:
+                                        '1px solid #EFF2F0'
+                                    }}
+                                  >
+                                    <Badge
+                                      variant={
+                                        match.similarity_score >=
+                                        75
+                                          ? 'success'
+                                          : match.similarity_score >=
+                                              50
+                                            ? 'warning'
+                                            : 'danger'
+                                      }
+                                    >
+                                      {match.similarity_score.toFixed(
+                                        1
+                                      )}
+                                      %
+                                    </Badge>
+                                  </td>
+                                </tr>
+                              )
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   ) : (
-                    <div className="card empty-state" style={{ padding: '16px' }}>
-                      <div style={{ fontSize: '12px', color: '#64748B' }}>
-                        No candidate matches returned by the AI matcher.
-                      </div>
+                    <div
+                      style={{
+                        padding:
+                          '16px',
+                        borderRadius:
+                          '11px',
+                        background:
+                          '#F8FAF9',
+                        color:
+                          '#89938D',
+                        textAlign:
+                          'center',
+                        fontSize:
+                          '9px'
+                      }}
+                    >
+                      No candidate matches returned by
+                      the AI matcher.
                     </div>
                   )}
                 </div>
 
-                {/* Human Review & Approval */}
-                <div style={{ padding: '14px', borderRadius: '8px', backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                {/* Human Review */}
+                <div
+                  style={{
+                    padding:
+                      '14px',
+                    borderRadius:
+                      '13px',
+                    background:
+                      '#FFFFFF',
+                    border:
+                      '1px solid #E2E9E5'
+                  }}
+                >
+                  <div
+                    style={{
+                      display:
+                        'flex',
+                      alignItems:
+                        'center',
+                      justifyContent:
+                        'space-between',
+                      gap: '8px',
+                      marginBottom:
+                        '11px'
+                    }}
+                  >
+                    <div
+                      style={{
+                        display:
+                          'flex',
+                        alignItems:
+                          'center',
+                        gap: '7px',
+                        color:
+                          '#35423B',
+                        fontSize:
+                          '10px',
+                        fontWeight:
+                          800
+                      }}
+                    >
+                      <ShieldCheck
+                        size={14}
+                        color="#078A58"
+                      />
                       Human Review & Approval
                     </div>
-                    <Badge variant={MATCH_STATUS_VARIANTS[matchResult.match_status] || 'neutral'}>
-                      {matchResult.match_status || 'Unmapped'}
+
+                    <Badge
+                      variant={
+                        MATCH_STATUS_VARIANTS[
+                          matchResult.match_status
+                        ] ||
+                        'neutral'
+                      }
+                    >
+                      {
+                        matchResult.match_status ||
+                        'Unmapped'
+                      }
                     </Badge>
                   </div>
 
                   {matchResult.mapping_id ? (
                     <>
-                      <label style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px', display: 'block' }}>
-                        Review Comment (optional)
+                      <label
+                        style={{
+                          display:
+                            'block',
+                          marginBottom:
+                            '5px',
+                          color:
+                            '#69756E',
+                          fontSize:
+                            '8px',
+                          fontWeight:
+                            750
+                        }}
+                      >
+                        Review Comment
                       </label>
+
                       <textarea
-                        className="form-control"
-                        rows={2}
+                        rows={3}
                         placeholder="Add custodian notes for this AI recommendation..."
-                        value={reviewComment}
-                        onChange={(e) => setReviewComment(e.target.value)}
-                        disabled={isReviewSubmitting}
+                        value={
+                          reviewComment
+                        }
+                        onChange={(e) =>
+                          setReviewComment(
+                            e.target.value
+                          )
+                        }
+                        disabled={
+                          isReviewSubmitting
+                        }
+                        style={{
+                          width:
+                            '100%',
+                          boxSizing:
+                            'border-box',
+                          padding:
+                            '9px',
+                          borderRadius:
+                            '9px',
+                          border:
+                            '1px solid #DDE5E0',
+                          background:
+                            '#FAFBFA',
+                          color:
+                            '#35423B',
+                          outline:
+                            'none',
+                          resize:
+                            'vertical',
+                          fontSize:
+                            '9px',
+                          lineHeight:
+                            1.45
+                        }}
                       />
 
                       {reviewError && (
-                        <div style={{ fontSize: '12px', color: '#B91C1C', marginTop: '8px' }}>
-                          {reviewError}
+                        <div
+                          style={{
+                            marginTop:
+                              '7px',
+                            padding:
+                              '8px',
+                            borderRadius:
+                              '7px',
+                            background:
+                              '#FFF0F0',
+                            color:
+                              '#B83D3D',
+                            fontSize:
+                              '8px'
+                          }}
+                        >
+                          {
+                            reviewError
+                          }
                         </div>
                       )}
 
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => handleReviewAction(matchingMaterial.id, matchResult.mapping_id, 'Rejected')}
-                          disabled={isReviewSubmitting}
+                      <div
+                        style={{
+                          display:
+                            'flex',
+                          justifyContent:
+                            'flex-end',
+                          gap: '7px',
+                          marginTop:
+                            '10px'
+                        }}
+                      >
+                        <ActionButton
+                          variant="danger"
+                          icon={
+                            XCircle
+                          }
+                          disabled={
+                            isReviewSubmitting
+                          }
+                          onClick={() =>
+                            handleReviewAction(
+                              matchingMaterial.id,
+                              matchResult.mapping_id,
+                              'Rejected'
+                            )
+                          }
                         >
-                          <XCircle size={13} /> {isReviewSubmitting ? 'Submitting...' : 'Reject Match'}
-                        </button>
-                        <button
-                          className="btn btn-primary btn-sm"
-                          onClick={() => handleReviewAction(matchingMaterial.id, matchResult.mapping_id, 'Approved')}
-                          disabled={isReviewSubmitting}
+                          {isReviewSubmitting
+                            ? 'Submitting...'
+                            : 'Reject Match'}
+                        </ActionButton>
+
+                        <ActionButton
+                          variant="primary"
+                          icon={
+                            CheckCircle2
+                          }
+                          disabled={
+                            isReviewSubmitting
+                          }
+                          onClick={() =>
+                            handleReviewAction(
+                              matchingMaterial.id,
+                              matchResult.mapping_id,
+                              'Approved'
+                            )
+                          }
                         >
-                          <CheckCircle2 size={13} /> {isReviewSubmitting ? 'Submitting...' : 'Approve Match'}
-                        </button>
+                          {isReviewSubmitting
+                            ? 'Submitting...'
+                            : 'Approve Match'}
+                        </ActionButton>
                       </div>
-                      <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>
-                        Original material &amp; CPSE code are preserved. Approval confirms the mapping and is recorded in the audit log.
+
+                      <div
+                        style={{
+                          marginTop:
+                            '8px',
+                          color:
+                            '#9AA39E',
+                          fontSize:
+                            '8px',
+                          lineHeight:
+                            1.4
+                        }}
+                      >
+                        Original material and CPSE
+                        code are preserved. Approval
+                        confirms the mapping and is
+                        recorded in the audit log.
                       </div>
                     </>
                   ) : (
-                    <div style={{ fontSize: '12px', color: '#64748B' }}>
-                      No mapping is pending review for this material yet — run matching again to generate one.
+                    <div
+                      style={{
+                        padding:
+                          '10px',
+                        borderRadius:
+                          '8px',
+                        background:
+                          '#F8FAF9',
+                        color:
+                          '#89938D',
+                        fontSize:
+                          '8px',
+                        lineHeight:
+                          1.5
+                      }}
+                    >
+                      No mapping is pending review for
+                      this material yet — run matching
+                      again to generate one.
                     </div>
                   )}
                 </div>
@@ -851,6 +3656,31 @@ export const MaterialSearchPage = ({ selectedCpse, setSelectedCpse, comparisonIt
           })()
         ) : null}
       </Drawer>
+
+      <style>
+        {`
+          @keyframes materialSearchSpin {
+            from {
+              transform: rotate(0deg);
+            }
+            to {
+              transform: rotate(360deg);
+            }
+          }
+
+          @media (max-width: 1200px) {
+            .material-search-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+          }
+
+          @media (max-width: 850px) {
+            .material-search-grid {
+              grid-template-columns: 1fr !important;
+            }
+          }
+        `}
+      </style>
     </div>
   );
 };
