@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from .database import Base
+from database import Base
 
 class CPSE(Base):
     __tablename__ = "cpse"

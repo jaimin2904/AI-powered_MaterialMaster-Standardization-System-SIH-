@@ -10,3 +10,4 @@ scikit-learn>=1.4
 numpy>=1.26
 # Required by Starlette TestClient used in backend tests
 httpx>=0.27
+pytest>=8.0

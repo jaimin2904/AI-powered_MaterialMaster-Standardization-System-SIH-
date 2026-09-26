@@ -20,7 +20,7 @@ import numpy as np
 
 from sentence_transformers import SentenceTransformer
 
-from .processor import processor
+from processor import processor
 
 logger = logging.getLogger(__name__)
 

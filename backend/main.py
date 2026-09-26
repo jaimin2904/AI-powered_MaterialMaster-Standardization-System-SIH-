@@ -7,9 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text as sa_text
 
-from .database import engine, get_db, Base, SessionLocal
-from . import models, schemas, crud
-from .seed import seed_database
+from database import engine, get_db, Base, SessionLocal
+import models, schemas, crud
+from seed import seed_database
 
 
 def _ensure_embedding_columns():
@@ -175,8 +175,8 @@ def delete_material(material_id: int, db: Session = Depends(get_db)):
     return {"detail": f"Material ID {material_id} deleted successfully"}
 
 
-from .processor import processor
-from .matcher import matcher as semantic_matcher
+from processor import processor
+from matcher import matcher as semantic_matcher
 
 
 # ==========================================

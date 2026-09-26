@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
-from .database import SessionLocal, engine, Base
-from . import models
+from database import SessionLocal, engine, Base
+import models
 
 def seed_database():
     Base.metadata.create_all(bind=engine)

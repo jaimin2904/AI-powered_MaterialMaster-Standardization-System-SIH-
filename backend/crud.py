@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from datetime import datetime
 from typing import Optional, List
-from . import models, schemas
+import models, schemas
 
 # --- CPSE CRUD ---
 def get_cpse(db: Session, cpse_id: str):
@@ -92,7 +92,7 @@ def search_materials(
 
 def create_material(db: Session, material: schemas.MaterialCreate, user: str = "Admin"):
     # Run data normalization & spec extraction
-    from .processor import processor
+    from processor import processor
     processed = processor.process_material(material.raw_description or material.description, unit=material.unit)
     
     mat_data = material.model_dump()

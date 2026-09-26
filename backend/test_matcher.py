@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from backend.matcher import SemanticMatcher
+from matcher import SemanticMatcher
 
 
 def _std(id_num, desc, category="Valves", spec=None):
@@ -143,7 +143,7 @@ class TestSemanticMatcher(unittest.TestCase):
 
 try:
     from fastapi.testclient import TestClient
-    from backend.main import app
+    from main import app
 
     API_AVAILABLE = True
 except Exception:  # pragma: no cover - protects unit-only environments

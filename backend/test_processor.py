@@ -1,5 +1,5 @@
 import unittest
-from backend.processor import MaterialDataProcessor
+from processor import MaterialDataProcessor
 
 class TestMaterialDataProcessor(unittest.TestCase):
     def setUp(self):
