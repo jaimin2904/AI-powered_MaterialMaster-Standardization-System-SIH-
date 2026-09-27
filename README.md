@@ -1,16 +1,79 @@
-# React + Vite
+# AI-Driven National Material Master Platform
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+## Smart India Hackathon 2026
 
-Currently, two official plugins are available:
+**Problem Statement ID:** 26099
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+**Problem Statement:** AI-Driven Standardization and Harmonization of Material Codes Across CPSEs
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## About the Project
 
-## Expanding the Oxlint configuration
+The **AI-Driven National Material Master Platform** is a web application designed to standardize and manage material information across CPSEs.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Different CPSEs may use different material codes, descriptions, specifications, units, and classifications for the same or similar materials. This can create duplicate and inconsistent records.
+
+The platform uses **AI, NLP, and semantic similarity** to clean material data, find similar materials, detect duplicates, and recommend standard material mappings.
+
+Original CPSE material codes are preserved, and AI recommendations are reviewed by humans before approval.
+
+---
+
+## Main Features
+
+- Material data management
+- Material data cleaning and normalization
+- Abbreviation and unit standardization
+- Specification extraction
+- AI-based material matching
+- Duplicate detection
+- Standard material mapping
+- Human approval and rejection
+- Dashboard and analytics
+- Audit history
+
+---
+
+## Technology Used
+
+### Frontend
+- React
+- Vite
+- JavaScript
+
+### Backend
+- Python
+- FastAPI
+- SQLAlchemy
+- SQLite
+
+### AI / ML
+- Sentence Transformers
+- `all-MiniLM-L6-v2`
+- Cosine Similarity
+
+---
+
+## How It Works
+
+```text
+Material Data
+      ↓
+Data Cleaning
+      ↓
+Normalization
+      ↓
+Specification Extraction
+      ↓
+AI Matching
+      ↓
+Duplicate Detection
+      ↓
+AI Recommendation
+      ↓
+Human Review
+      ↓
+Approve / Reject
+      ↓
+Audit History
